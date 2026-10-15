@@ -2080,6 +2080,12 @@
     if (level < 4 && !localLevel.has(uid)) setTimeout(() => { if (!busy && !localLevel.has(uid)) toggleUnit(uid); }, 480);
   }
   addEventListener('scroll', () => { if (popNote) placePop(); }, { passive: true });
+  // typing into a note scrolled out of sight brings its passage back (and the note with it, on the scroll above):
+  // the keys never go into a box no one sees, and scrolling away to read while writing stays possible
+  npop.addEventListener('beforeinput', () => {
+    const r = npop.getBoundingClientRect(), el = popNote && targetEl(popNote.anchor);
+    if (el && (r.bottom < 0 || r.top > innerHeight)) el.scrollIntoView({ block: 'center' });
+  });
 
   // a question goes to the model with the turns before it; the note keeps the question at once, the answer fills it in
   async function askNote(n, q) {
