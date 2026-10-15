@@ -407,13 +407,14 @@ def store_pdf(pid, folder, sc, name, tier, replace=False):
     doc = sc.get("metadata", {}).get("document", {}) or {}
     doi = next((re.sub(r"^doi:\s*", "", i, flags=re.I) for i in doc.get("identifiers") or [] if re.match(r"^(doi:)?10\.\d{4,9}/", i, re.I)), "")
     url = next((i for i in doc.get("identifiers") or [] if re.match(r"https?://", i)), "")
+    producer = (sc.get("metadata", {}).get("producer") or {}).get("name") or "mineru"   # (or TextFold's own reader)
     meta = {"id": pid, "version": "", "title": title, "authors": authors, "date": (doc.get("created_at") or "")[:10],
             "snapshot": time.strftime("%Y-%m-%d"), "abs_url": url or (f"https://doi.org/{doi}" if doi else ""), "html_url": "",
-            "doi": doi, "license": "", "source": {"kind": "pdf", "name": name, "tier": tier, "engine": "mineru"},
+            "doi": doi, "license": "", "source": {"kind": "pdf", "name": name, "tier": tier, "engine": producer},
             "label": f"PDF · {name}"}
     if ext != "pdf":   # read in one way only, but a picture (fast or accurate, as a page is)
         meta["source"] = {"kind": "file", "format": ext, "name": name, "tier": engine.tier_for(f"x.{ext}", tier) if ext in engine.PICTURES else "",
-                          "engine": (sc.get("metadata", {}).get("producer") or {}).get("name") or "mineru"}   # (or TextFold's own reader)
+                          "engine": producer}
         meta["label"] = f"{engine.FILES.get(ext, ext.upper())} · {name}"
     keep = d.with_name(d.name + ".keep")   # the reader's notes and the file, on disk while the document is rewritten
     if replace and d.exists():

@@ -12,5 +12,7 @@ lxml_html_clean
 # Word files (and Excel's), read without the PDF engine
 mammoth
 openpyxl
+# PDFs that have their words in them, read without the PDF engine (a scan still needs it)
+pdf-inspector
 # only for the Anthropic API (Claude Code, Codex, Pi and OpenAI-compatible providers need nothing more):
 # anthropic

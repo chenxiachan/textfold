@@ -85,5 +85,5 @@ for (const d of ['textfold']) {
 writeFileSync(path.join(app, 'requirements.txt'), '# installed into ../python\n');
 
 // a quick check that the runtime imports what the server needs (trafilatura: web pages and HTML files)
-run(['-s', '-c', 'import bs4, lxml, PIL, trafilatura, mammoth, openpyxl, textfold.server; print("payload ok")'], { cwd: app, stdio: 'inherit' });
+run(['-s', '-c', 'import bs4, lxml, PIL, trafilatura, mammoth, openpyxl, pdf_inspector, textfold.server; print("payload ok")'], { cwd: app, stdio: 'inherit' });
 if (!existsSync(path.join(app, 'textfold', 'web', 'reader.js'))) throw new Error('web/ missing from the payload');

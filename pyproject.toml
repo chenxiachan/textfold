@@ -29,6 +29,7 @@ dependencies = [
     "lxml_html_clean",   # trafilatura needs it (through justext's lxml[html_clean]), which an older pip leaves out
     "mammoth",
     "openpyxl",
+    "pdf-inspector",   # PDFs that have their words in them, read without the PDF engine
 ]
 
 [project.optional-dependencies]

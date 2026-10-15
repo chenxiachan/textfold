@@ -24,7 +24,7 @@ def get(a):
     """A document at one level, on stdout: written first when it has no levels yet (a model is called), unless
     --no-generate. A PDF (or a Word, PowerPoint, Excel, EPUB or HTML file, a picture) goes through the PDF engine; a
     Markdown or text file is read as it is."""
-    from . import engine, fold, models, office, pdfdoc, store
+    from . import engine, fold, models, office, pdfdoc, pdftext, store
     f = Path(a.ref).expanduser()
     ext = engine.kind_of(f.name) if f.is_file() else None
     if ext:
@@ -32,6 +32,8 @@ def get(a):
         pid = pdfdoc.pid_of(data, ext)
         if not (store.pdir(pid) / "meta.json").exists() and not engine.where() and ext != "pdf" and office.reads(ext):
             office.save(pid, f, f.name)   # (the engine reads it more completely, when it is installed)
+        elif not (store.pdir(pid) / "meta.json").exists() and not engine.where() and ext == "pdf" and pdftext.save(pid, f, f.name):
+            pass   # a PDF with its words in it, read by TextFold itself (a scan still needs the engine)
         elif not (store.pdir(pid) / "meta.json").exists():
             if not engine.where():
                 what = "PDF" if ext == "pdf" else "picture" if ext in engine.PICTURES else f"{engine.FILES[ext]} file"

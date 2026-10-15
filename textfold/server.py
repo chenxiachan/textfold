@@ -57,7 +57,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import agents, bridges, build, engine, fetch, langs, llm, local, models, notes, office, pdf, pdfdoc, pipeline, providers, store, zotero
+from . import agents, bridges, build, engine, fetch, langs, llm, local, models, notes, office, pdf, pdfdoc, pdftext, pipeline, providers, store, zotero
 
 STATIC = {"app.js": "text/javascript", "app.css": "text/css", "reader.js": "text/javascript",
           "reader.css": "text/css", "i18n.js": "text/javascript", "tutorial.js": "text/javascript"}
@@ -137,6 +137,14 @@ class Jobs:
         """A file kept until the engine is installed (then converted), with a note of its name and language beside it."""
         self.pending[pid] = (str(file), name, lang)
         Path(file).with_suffix(".json").write_text(json.dumps({"name": name, "lang": lang, "file": Path(file).name}, ensure_ascii=False))
+
+    def read_pdf(self, pid, file, name, lang):
+        """A PDF that has its words in it, read by TextFold itself while the engine is not installed (pdftext.py), the
+        file gone from uploads/ once it is stored: its levels' job, or None when it needs the engine (a scan)."""
+        if not pdftext.save(pid, file, name):
+            return None
+        Path(file).unlink(missing_ok=True)
+        return self.submit(pid, lang, False)
 
     def install_engine(self):
         return self._same(kind="install") or self._new(self.eq, kind="install", title="PDF engine")
@@ -239,6 +247,8 @@ class Jobs:
             job.update(status="moved", next=self.submit(pid, job["lang"], False)["id"])
         elif engine.where():
             job.update(status="moved", next=self.convert(pid, f, name, job["lang"])["id"])
+        elif nxt := self.read_pdf(pid, f, name, job["lang"]):
+            job.update(status="moved", next=nxt["id"])
         else:
             self.wait_for_engine(pid, f, name, job["lang"])
             job.update(status="error", error="needs-engine", upload=pid)
@@ -249,6 +259,8 @@ class Jobs:
         job.update(finished=time.time())
         if engine.where():
             nxt = self.convert(pid, file, job.get("name") or file.name, job["lang"])
+            job.update(status="moved", next=nxt["id"])
+        elif nxt := self.read_pdf(pid, file, job.get("name") or file.name, job["lang"]):
             job.update(status="moved", next=nxt["id"])
         else:
             self.wait_for_engine(pid, file, job.get("name") or file.name, job["lang"])
@@ -366,6 +378,9 @@ def take_pdf(jobs, data, headers):
         return {"job": job, "via": "online", "ref": ref}, 200
     if engine.where():
         return {"job": jobs.convert(pid, f, name, lang), "via": "pdf"}, 200
+    job = jobs.read_pdf(pid, f, name, lang)
+    if job:   # read: it opens now, as a converted PDF does, while its levels are written
+        return {"job": job, "paper": pid, "via": "pdf"}, 200
     jobs.wait_for_engine(pid, f, name, lang)
     return {"needs": "engine", "upload": pid, "name": name, "engine": engine.status()}, 200
 
