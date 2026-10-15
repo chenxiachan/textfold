@@ -1993,7 +1993,7 @@
       body = turns.map((x, k) => turnHtml(x, k === turns.length - 1)).join('') +
         (turns.length && turns[turns.length - 1].model ? `<div class="np-model">${esc(turns[turns.length - 1].model)}</div>` : '') +
         (turns.length ? '' : tryRow(t.n_pstarters)) +
-        (waiting ? '' : `<input class="np-input" type="text" placeholder="${esc(turns.some((x) => x.a) ? t.n_more : t.n_ask_ph)}" value="${esc(failed ? turns[turns.length - 1].q : '')}">`);
+        (waiting ? '' : `<textarea class="np-input" rows="2" placeholder="${esc(turns.some((x) => x.a) ? t.n_more : t.n_ask_ph)}">${esc(failed ? turns[turns.length - 1].q : '')}</textarea>`);
     } else {
       body = `<textarea class="np-text" rows="3" placeholder="${esc(t.n_note_ph)}">${esc(n.text || '')}</textarea>`;
     }
@@ -2036,7 +2036,7 @@
   });
   npop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); closeNote(); return; }
-    if (e.key === 'Enter' && e.target.matches('.np-input') && e.target.value.trim()) { e.preventDefault(); askNote(popNote, e.target.value.trim()); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.matches('.np-input') && e.target.value.trim()) { e.preventDefault(); askNote(popNote, e.target.value.trim()); }   // Shift+Enter: a new line, as in the chat
   });
   npop.addEventListener('click', (e) => {
     const b = e.target.closest('button');

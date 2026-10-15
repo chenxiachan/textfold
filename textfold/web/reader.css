@@ -475,7 +475,7 @@ li.u.has-notes::after { left: calc(-1.3em - 13px); }
 .npop textarea, .npop input { width: 100%; font: 14px/1.5 var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px 9px; outline: none; resize: vertical; }
 .npop textarea:focus, .npop input:focus { border-color: var(--accent); }
-.npop .np-q { font-weight: 650; color: var(--ink); margin-bottom: 4px; }
+.npop .np-q { font-weight: 650; color: var(--ink); margin-bottom: 4px; white-space: pre-wrap; }
 .npop .np-turn + .np-turn { border-top: 1px solid var(--line-2); padding-top: 8px; margin-top: 4px; }
 .npop .np-input { margin-top: 6px; }
 .ncard .nc-n { font-style: normal; font-weight: 600; font-size: 11px; color: var(--accent); background: var(--card); border-radius: 999px; padding: 0 5px; margin-left: 3px; }
@@ -508,7 +508,7 @@ li.u.has-notes::after { left: calc(-1.3em - 13px); }
 .ch-input { width: 100%; font: 14px/1.5 var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
   padding: 7px 10px; outline: none; resize: none; }
 .ch-input:focus { border-color: var(--accent); }
-.chat .np-q { font-weight: 650; color: var(--ink); margin-bottom: 4px; }
+.chat .np-q { font-weight: 650; color: var(--ink); margin-bottom: 4px; white-space: pre-wrap; }
 .chat .np-turn + .np-turn { border-top: 1px solid var(--line-2); padding-top: 8px; margin-top: 6px; }
 .chat .np-a p { margin: 0 0 7px; } .chat .np-a ul, .chat .np-a ol { margin: 0 0 7px; padding-left: 18px; }
 .chat .np-a code { font: .9em var(--mono); background: var(--surface); padding: 0 3px; border-radius: 3px; }
