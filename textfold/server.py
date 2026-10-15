@@ -215,9 +215,15 @@ class Jobs:
                 pipeline.generate(job["pid"], job["lang"], spec, force=job["force"], progress=self._progress(job, stop), log=self._log(job), stop=stop)
                 job["status"] = "done"
             except Exception as e:  # shown in the app; the traceback stays in the job log
-                if job.get("attach") and str(e) == "no-html" and not stop.is_set():
-                    self._fallback(job)   # an arXiv paper without its HTML version: its PDF, converted here
-                    continue
+                if str(e) == "no-html" and not stop.is_set():
+                    try:   # an arXiv paper without its HTML version: its PDF (the reader's, else arXiv's), read here
+                        if job.get("attach"):
+                            self._fallback(job)
+                        else:
+                            self._pdf_link(job, f"https://arxiv.org/pdf/{job['pid']}")
+                        continue
+                    except Exception:   # arXiv's PDF out of reach too: the app's own sentence for no HTML
+                        pass
                 if str(e) == "web-pdf" and not stop.is_set():
                     try:
                         self._pdf_link(job)   # a link to a PDF: the file, as if it had been dropped on the landing
@@ -229,8 +235,8 @@ class Jobs:
             job["finished"] = time.time()
             PAGES.pop(job["pid"], None)
 
-    def _pdf_link(self, job):
-        url = (store.pdir(job["pid"]) / "url.txt").read_text().strip()
+    def _pdf_link(self, job, url=None):
+        url = url or (store.pdir(job["pid"]) / "url.txt").read_text().strip()
         with urllib.request.urlopen(urllib.request.Request(url, headers=fetch.UA), timeout=90) as r:
             data = r.read(pdf.LIMIT + 1)
         if data[:5] != b"%PDF-" or len(data) > pdf.LIMIT:
