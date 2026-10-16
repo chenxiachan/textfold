@@ -33,7 +33,7 @@ def _times(d, key):
 
 def load():
     try:
-        d = json.loads(path().read_text())
+        d = json.loads(path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         d = {}
     folders = [{"id": f["id"], "name": f["name"]} for f in d.get("folders") or []
@@ -48,7 +48,7 @@ def _save(d):
     f = path()
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_name(f.name + ".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(f)
 
 

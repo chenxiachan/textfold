@@ -64,7 +64,7 @@ def bridge_start():
     if not npx:
         raise RuntimeError("Node.js (npx) was not found on this computer")
     HOME.mkdir(parents=True, exist_ok=True)
-    log = open(HOME / "bridge.log", "a")
+    log = open(HOME / "bridge.log", "a", encoding="utf-8", errors="replace")
     subprocess.Popen([npx, "-y", BRIDGE_PACKAGE, "--detach"], cwd=tempfile.gettempdir(), env=env,
                      stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
     return bridge_status(fresh=True)

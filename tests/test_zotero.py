@@ -156,7 +156,7 @@ class Setup(unittest.TestCase):
         (zdata / "storage" / "ATTPLNP2" / "plain.pdf").write_bytes(PDF + b"%plain\n")
         (cls.tmp / "secret.pdf").write_bytes(PDF)   # what "../../secret.pdf" would reach from storage/<key>/
         files = {"snapshot": cls.tmp / "snap.html", "fake": cls.tmp / "fake.pdf", "outside": cls.tmp / "outside.pdf"}
-        files["snapshot"].write_text(SNAPSHOT)
+        files["snapshot"].write_text(SNAPSHOT, encoding="utf-8")
         files["fake"].write_bytes(b"#!/bin/sh\necho not a pdf\n")
         files["outside"].write_bytes(PDF)
         cls.fake = Fake(files)
@@ -165,7 +165,7 @@ class Setup(unittest.TestCase):
         cls.home = cls.tmp / "home"
         (cls.home / ".textfold").mkdir(parents=True)
         cls.settings = {"use_thoughtdag_env": False, "zotero": {"base": cls.base, "data_dir": str(zdata)}}
-        (cls.home / ".textfold" / "settings.json").write_text(json.dumps(cls.settings))
+        (cls.home / ".textfold" / "settings.json").write_text(json.dumps(cls.settings), encoding="utf-8")
         cls.data = cls.tmp / "data"
         (cls.data / "papers").mkdir(parents=True)
         # this process's settings and library, the temporary ones
@@ -221,13 +221,13 @@ class LibraryTest(Setup):
                 zotero.read("users/0", "HTMLKEY2")
         finally:
             self.fake.off = False
-        s = json.loads(models.SETTINGS.read_text())
+        s = json.loads(models.SETTINGS.read_text(encoding="utf-8"))
         s["zotero"]["base"] = f"http://127.0.0.1:{free_port()}"
-        models.SETTINGS.write_text(json.dumps(s))
+        models.SETTINGS.write_text(json.dumps(s), encoding="utf-8")
         try:
             self.assertEqual(zotero.status()["error"], "not-running")
         finally:
-            models.SETTINGS.write_text(json.dumps(self.settings))
+            models.SETTINGS.write_text(json.dumps(self.settings), encoding="utf-8")
 
 
 class ReadTest(Setup):
@@ -262,12 +262,12 @@ class ReadTest(Setup):
         d = self.data / "papers" / "pdf-fedcba9876543210"
         d.mkdir()
         (d / "meta.json").write_text(json.dumps({"id": d.name, "title": "WHAT THE PDF SAYS", "authors": [], "date": "",
-                                                 "doi": "", "abs_url": "", "source": {"kind": "pdf", "name": "paper.pdf"}, "label": "PDF · paper.pdf"}))
+                                                 "doi": "", "abs_url": "", "source": {"kind": "pdf", "name": "paper.pdf"}, "label": "PDF · paper.pdf"}), encoding="utf-8")
         self.assertFalse(zotero.apply(d.name))   # not read from Zotero: as it was
         got = zotero.read("users/0", "PDFSKEY2")
         zotero.link("users/0", "PDFSKEY2", d.name, got["title"], {**got["record"], "citekey": "lovelace2024"})
         self.assertTrue(zotero.apply(d.name))
-        m = json.loads((d / "meta.json").read_text())
+        m = json.loads((d / "meta.json").read_text(encoding="utf-8"))
         self.assertEqual((m["title"], m["authors"], m["date"], m["doi"], m["abs_url"], m["label"]),
                          ("A paper with its PDF", ["Lovelace, Ada"], "2024-05-01", "10.1234/abcd", "https://doi.org/10.1234/abcd", "Zotero · lovelace2024"))
         self.assertEqual(m["zotero"], {"library": "users/0", "item": "PDFSKEY2", "citekey": "lovelace2024"})
@@ -275,7 +275,7 @@ class ReadTest(Setup):
 
     def test_an_item_read_is_marked_while_its_document_is_here(self):
         (self.data / "papers" / "doc-0123456789abcdef").mkdir()
-        (self.data / "papers" / "doc-0123456789abcdef" / "meta.json").write_text("{}")
+        (self.data / "papers" / "doc-0123456789abcdef" / "meta.json").write_text("{}", encoding="utf-8")
         zotero.link("users/0", "HTMLKEY2", "doc-0123456789abcdef", "A saved page")
         zotero.link("users/0", "ARXVKEY2", "2201.11903", "Chain of thought")   # not here (never generated)
         got = {i["key"]: i["paper"] for i in zotero.items("users/0", "TPCLKEY2")}
@@ -331,8 +331,8 @@ class ServerTest(Setup):
         self.assertTrue(pid.startswith("doc-"), d)
         self.assertTrue((self.data / "papers" / pid / "source.html").exists())
         self.assertEqual(urllib.request.urlopen(f"http://127.0.0.1:{self.port}/p/{pid}", timeout=30).status, 200)
-        self.assertEqual(json.loads((self.data / "zotero.json").read_text())["users/0/HTMLKEY2"]["paper"], pid)
-        m = json.loads((self.data / "papers" / pid / "meta.json").read_text())   # Zotero's title, not the page's own
+        self.assertEqual(json.loads((self.data / "zotero.json").read_text(encoding="utf-8"))["users/0/HTMLKEY2"]["paper"], pid)
+        m = json.loads((self.data / "papers" / pid / "meta.json").read_text(encoding="utf-8"))   # Zotero's title, not the page's own
         self.assertEqual((m["title"], m["authors"], m["label"]), ("A saved page", ["Lovelace, Ada"], "Zotero · snap.html"))
         listed = {p["id"]: p for p in self.call("/api/papers")[1]}
         self.assertEqual((listed[pid]["title"], listed[pid].get("zotero")), ("A saved page", True))
@@ -351,7 +351,7 @@ class ServerTest(Setup):
         self.assertEqual(self.call("/api/zotero/library", {"library": "users/0"}, origin="https://example.com")[0], 403)
         code, st = self.call("/api/zotero/library", {"library": "groups/42", "base": "http://example.com", "data_dir": "/"})
         self.assertEqual((code, st["library"]), (200, "groups/42"))
-        z = json.loads((self.home / ".textfold" / "settings.json").read_text())["zotero"]
+        z = json.loads((self.home / ".textfold" / "settings.json").read_text(encoding="utf-8"))["zotero"]
         self.assertEqual((z["base"], z["data_dir"]), (self.base, self.settings["zotero"]["data_dir"]))   # only the library changed
         self.call("/api/zotero/library", {"library": "users/0"})
 

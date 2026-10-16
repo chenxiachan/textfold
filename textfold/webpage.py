@@ -37,7 +37,7 @@ def register(url):
     d = store.pdir(pid)
     if not (d / "meta.json").exists():
         d.mkdir(parents=True, exist_ok=True)
-        (d / "url.txt").write_text(url)
+        (d / "url.txt").write_text(url, encoding="utf-8")
     return pid
 
 
@@ -94,7 +94,7 @@ def fetch(pid, progress=None):
     d = store.pdir(pid)
     if (d / "meta.json").exists() and (d / "source.html").exists():
         return pid
-    url = (d / "url.txt").read_text().strip()
+    url = (d / "url.txt").read_text(encoding="utf-8").strip()
     data, final, charset = _get(url)
     page = data.decode(charset or "utf-8", "replace") if charset else data
     tree = visible(page, final)

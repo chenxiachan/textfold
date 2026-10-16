@@ -32,7 +32,7 @@ def fonts_head(base=None):
     Latin faces only, the rest falling back to the system's."""
     if base:
         return f'<link rel="stylesheet" href="{base}fonts/fonts.css">'
-    css = (VENDOR / "fonts" / "fonts.css").read_text()
+    css = (VENDOR / "fonts" / "fonts.css").read_text(encoding="utf-8")
     faces = [m.group(0) for m in re.finditer(r"/\* latin \*/\n@font-face \{.*?\}", css, re.S)]
     return "<style>" + "\n".join(re.sub(r"url\(([\w.-]+\.woff2)\)", lambda u: _data(VENDOR / "fonts" / u.group(1), "font/woff2"), f)
                                  for f in faces) + "</style>"
@@ -40,8 +40,8 @@ def fonts_head(base=None):
 
 def _katex_inside():
     css = re.sub(r"url\((fonts/[\w-]+\.woff2)\)", lambda u: _data(VENDOR / "katex" / u.group(1), "font/woff2"),
-                 (VENDOR / "katex" / "katex.min.css").read_text())
-    return f'<style id="katex-css">{css}</style><script>{(VENDOR / "katex" / "katex.min.js").read_text()}</script>'
+                 (VENDOR / "katex" / "katex.min.css").read_text(encoding="utf-8"))
+    return f'<style id="katex-css">{css}</style><script>{(VENDOR / "katex" / "katex.min.js").read_text(encoding="utf-8")}</script>'
 
 
 def _has_tex(doc):
@@ -54,7 +54,7 @@ ANIMATED_INSIDE = 2_000_000   # a moving picture larger than this goes into a si
 
 def data_uri(f, max_side=1600):
     if f.suffix.lower() == ".svg":  # vector stays vector: crisp at every zoom, and small for line plots
-        svg = f.read_text(errors="replace")
+        svg = f.read_text(encoding="utf-8", errors="replace")
         # "&" escaped too: in the page's src="…" an entity of the SVG's own (&quot;) would be decoded first and break it
         return "data:image/svg+xml;charset=utf-8," + urllib.parse.quote(svg, safe=" /:=;,'()-._~!*+@?$")
     im = Image.open(f)
@@ -100,15 +100,15 @@ def page(doc, app=False, assets=None, saved=None, pdf=None):
     a page the reader saved for themself ({"notes", "saved", "lang"}: the notes chosen, an id of the file, its language).
     pdf: the paper's PDF beside a gallery's page, for the original pages next to the text ({"file", "pdfjs"})."""
     inline_images(doc, app)
-    t = (WEB / "template.html").read_text()
+    t = (WEB / "template.html").read_text(encoding="utf-8")
     if app:
         head = fonts_head(APP_ASSETS) + '<link rel="stylesheet" href="/static/reader.css"><link rel="stylesheet" href="/static/app.css">'
         scripts = ('<script src="/static/i18n.js"></script><script src="/static/tutorial.js"></script><script src="/static/reader.js"></script>'
                    '<script src="/static/app.js"></script>')
         side, cls, katex = '<aside id="sidebar" class="collapsed"></aside>', "app", APP_ASSETS + "katex/"
     else:
-        head = fonts_head(assets) + f"<style>{(WEB / 'reader.css').read_text()}</style>"
-        scripts = f"<script>{(WEB / 'i18n.js').read_text()}</script><script>{(WEB / 'reader.js').read_text()}</script>"
+        head = fonts_head(assets) + f"<style>{(WEB / 'reader.css').read_text(encoding="utf-8")}</style>"
+        scripts = f"<script>{(WEB / 'i18n.js').read_text(encoding="utf-8")}</script><script>{(WEB / 'reader.js').read_text(encoding="utf-8")}</script>"
         side, cls, katex = "", "static", (assets + "katex/") if assets else None
         if not assets and (_has_tex(doc) or (saved and saved.get("notes"))):   # (an answer's formulas need it too)
             head += _katex_inside()
@@ -122,5 +122,5 @@ def export(pid):
     out = store.DATA / "out" / pid
     out.mkdir(parents=True, exist_ok=True)
     f = out / "index.html"
-    f.write_text(page(doc, app=False))
+    f.write_text(page(doc, app=False), encoding="utf-8")
     return f

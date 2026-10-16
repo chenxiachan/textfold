@@ -46,7 +46,7 @@ def fetch(pid, root: Path, force=False):
         "html_url": final,
         "license": lic.group(1) if lic else "",
     }
-    meta_f.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    meta_f.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     return d
 
 

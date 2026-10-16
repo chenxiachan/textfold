@@ -254,7 +254,7 @@ def _links_file():
 
 def links():
     try:
-        return {k: v["paper"] for k, v in json.loads(_links_file().read_text()).items()}
+        return {k: v["paper"] for k, v in json.loads(_links_file().read_text(encoding="utf-8")).items()}
     except (OSError, ValueError, KeyError, TypeError):
         return {}
 
@@ -263,13 +263,13 @@ def link(lib, key, pid, title, record=None):
     f = _links_file()
     with _lock:
         try:
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
         data[f"{lib}/{key}"] = {"paper": pid, "title": title, **({"record": record} if record else {})}
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+        tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
         tmp.replace(f)
 
 
@@ -281,8 +281,8 @@ def apply(pid):
         return False
     mf = store.pdir(pid) / "meta.json"
     try:
-        data = json.loads(_links_file().read_text())
-        meta = json.loads(mf.read_text())
+        data = json.loads(_links_file().read_text(encoding="utf-8"))
+        meta = json.loads(mf.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
     found = [(where, v) for where, v in data.items() if isinstance(v, dict) and v.get("paper") == pid and v.get("record")]
@@ -297,5 +297,5 @@ def apply(pid):
         meta["abs_url"] = rec.get("url") or f"https://doi.org/{rec['doi']}"
     meta["label"] = f"Zotero · {rec.get('citekey') or (meta.get('source') or {}).get('name') or meta['title']}"
     meta["zotero"] = {"library": lib, "item": key, "citekey": rec.get("citekey", "")}
-    mf.write_text(json.dumps(meta, ensure_ascii=False))
+    mf.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     return True

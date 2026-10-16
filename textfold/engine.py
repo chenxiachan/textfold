@@ -176,7 +176,7 @@ def install(progress=lambda *a: None, log=lambda *a: None, stop=None):
     progress("engine-models", 3, steps)
     _run([_bin(e, "mineru-kit"), "models", "download", "--tier", "standard"], env, log, stop)
     shutil.rmtree(e / ".uv-cache", ignore_errors=True)
-    (e / MARK).write_text(f"mineru=={VERSION}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    (e / MARK).write_text(f"mineru=={VERSION}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     progress("engine-models", steps, steps)
     return status()
 
@@ -278,7 +278,7 @@ def crop(pdf, crops):
     job = json.dumps({"pdf": str(pdf), "crops": [[p, list(b), str(o)] for p, b, o in crops]})
     try:
         r = subprocess.run([str(_bin(e, "python")), "-c", CROP], input=job, capture_output=True, text=True,
-                           env=_env(e), timeout=120 + 5 * len(crops))
+                           encoding="utf-8", errors="replace", env=_env(e), timeout=120 + 5 * len(crops))
     except (OSError, subprocess.TimeoutExpired):
         return set()
     done = set()

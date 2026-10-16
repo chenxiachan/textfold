@@ -65,7 +65,7 @@ def call(prompt, schema, model, cache_dir: Path, force=False, timeout=900, syste
     cache_dir.mkdir(parents=True, exist_ok=True)
     f = cache_dir / f"{key}.json"
     if f.exists() and not force:
-        return json.loads(f.read_text()), True
+        return json.loads(f.read_text(encoding="utf-8")), True
     note = None
     try:
         out, cost = _once(prompt, schema, spec, timeout, system)
@@ -79,7 +79,7 @@ def call(prompt, schema, model, cache_dir: Path, force=False, timeout=900, syste
     rec = {"out": out, "cost": cost, "models": [spec["id"]] + ([effort] if effort else [])}
     if note:
         rec["note"] = note
-    f.write_text(json.dumps(rec, ensure_ascii=False, indent=1))
+    f.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
     return rec, False
 
 
@@ -113,9 +113,10 @@ def _claude(prompt, schema, model, effort, timeout, system=SYSTEM):
     # settings to sign in, the call is made again with them.
     with tempfile.TemporaryDirectory() as tmp:
         r = subprocess.run(cmd + ["--setting-sources", "project,local"], input=prompt, capture_output=True, text=True,
-                           timeout=timeout, env=env, cwd=tmp)
+                           encoding="utf-8", errors="replace", timeout=timeout, env=env, cwd=tmp)
         if r.returncode:
-            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, env=env, cwd=tmp)
+            r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=timeout, env=env, cwd=tmp)
     if r.returncode:
         raise RuntimeError(f"claude -p exited {r.returncode}: {(r.stderr or r.stdout)[-1500:]}")
     d = json.loads(r.stdout)

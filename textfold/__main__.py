@@ -20,6 +20,17 @@ def _say(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
+def _utf8_streams():
+    """The document's text (titles, quotes) reaches stdout/stderr as UTF-8, whatever the locale's codepage is: on
+    Windows a redirected or piped stream is otherwise cp936 (or another legacy codepage) and a character outside it
+    raises instead of printing."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def get(a):
     """A document at one level, on stdout: written first when it has no levels yet (a model is called), unless
     --no-generate. A PDF (or a Word, PowerPoint, Excel, EPUB or HTML file, a picture) goes through the PDF engine; a
@@ -96,6 +107,7 @@ def engine_cmd(args):
 
 
 def main():
+    _utf8_streams()
     if sys.argv[1:2] == ["--version"]:
         from . import __version__
         return print(f"TextFold {__version__}")

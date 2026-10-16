@@ -76,7 +76,7 @@ def make(entries, want, model, at_once):
         if not todo:
             return pid, "ready"
         cmd = [sys.executable, "-m", "textfold", pid, "--model", model] + [x for l in todo if l != "en" for x in ("--lang", l)]
-        with open(logs / f"{pid}.log", "a") as log:
+        with open(logs / f"{pid}.log", "a", encoding="utf-8") as log:
             r = subprocess.run(cmd, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         return pid, ("made " + " ".join(todo)) if r.returncode == 0 else f"failed ({logs / f'{pid}.log'})"
 
@@ -223,7 +223,7 @@ def main():
     ap.add_argument("--review", action="store_true", help="also write each paper's text for proofreading, in <data>/review")
     ap.add_argument("--unproofread", action="store_true", help="build papers that have no corrections yet (a first look, never to publish)")
     a = ap.parse_args()
-    spec = json.loads(LIST.read_text())
+    spec = json.loads(LIST.read_text(encoding="utf-8"))
     want = spec["langs"]
     lib = store.DATA
     store.DATA = Path(a.data)   # every read and write of the store goes to the gallery's folder
@@ -250,7 +250,7 @@ def main():
         if not p or missing(pid, want):
             print(f"  - {pid}: not ready ({', '.join(missing(pid, want)) if p else 'not generated'}); run with --make")
             continue
-        meta = json.loads((store.pdir(pid) / "meta.json").read_text())
+        meta = json.loads((store.pdir(pid) / "meta.json").read_text(encoding="utf-8"))
         lic = meta.get("license", "")
         if not (shareable(lic) or e.get("consent")):
             print(f"  - {pid}: left out ({lic or 'no license'})")
@@ -261,11 +261,11 @@ def main():
         doc["meta"].setdefault("titles", {}).update(e.get("title", {}))   # a title the list words better than the model
         fx = FIXES / f"{pid}.json"
         if fx.exists():
-            for w in corrected(doc, json.loads(fx.read_text()), want):
+            for w in corrected(doc, json.loads(fx.read_text(encoding="utf-8")), want):
                 print(f"  ~ {pid} {w}")
         if a.review:
             (store.DATA / "review").mkdir(exist_ok=True)
-            (store.DATA / "review" / f"{pid}.json").write_text(json.dumps(review(doc, want), ensure_ascii=False, indent=1))
+            (store.DATA / "review" / f"{pid}.json").write_text(json.dumps(review(doc, want), ensure_ascii=False, indent=1), encoding="utf-8")
         beside = None
         if pdf.has_source(pid):   # its original pages next to the text: the PDF, fetched once into the gallery's folder
             f = pdf.path(pid)
@@ -274,7 +274,7 @@ def main():
                 beside = {"file": "source.pdf", "pdfjs": "../assets/pdfjs/"}
             else:
                 print(f"  ~ {pid}: no PDF to be had, so no original pages beside it")
-        (out / "index.html").write_text(build.page(doc, app=False, assets="../assets/", pdf=beside))
+        (out / "index.html").write_text(build.page(doc, app=False, assets="../assets/", pdf=beside), encoding="utf-8")
         cards.append((e, p, meta, lic))
         print(f"  + {pid}: {p['title'][:60]}")
     # the pages' fonts, KaTeX and PDF.js, beside them: a visitor's browser asks no other server for anything
@@ -285,8 +285,8 @@ def main():
         if d.is_dir() and d.name != "assets" and d.name not in {c[0]["id"] for c in cards}:
             shutil.rmtree(d)
             print(f"  - {d.name}: removed from the site")
-    (site / "index.html").write_text(index(cards, want))
-    (site / ".nojekyll").write_text("")   # GitHub Pages serves the files as they are
+    (site / "index.html").write_text(index(cards, want), encoding="utf-8")
+    (site / ".nojekyll").write_text("", encoding="utf-8")   # GitHub Pages serves the files as they are
     print(f"{len(cards)} papers in {site}")
 
 

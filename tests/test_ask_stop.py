@@ -30,7 +30,7 @@ class AskStop(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         store.pdir(PID).mkdir(parents=True)
-        (store.pdir(PID) / "meta.json").write_text(json.dumps({"title": "A paper"}))
+        (store.pdir(PID) / "meta.json").write_text(json.dumps({"title": "A paper"}), encoding="utf-8")
         notes.put(PID, json.loads(json.dumps(NOTE)))
 
     def thread(self):

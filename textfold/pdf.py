@@ -49,7 +49,7 @@ def path(pid):
     f = d / "source.pdf"
     if f.exists():
         return f
-    meta = json.loads((d / "meta.json").read_text())
+    meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
     with _lock:
         if f.exists():
             return f
@@ -70,7 +70,7 @@ def path(pid):
 def where(pid):
     """Where a reader can open the PDF themselves when the app cannot fetch it (medRxiv refuses programs): its first
     address, else the paper's page."""
-    meta = json.loads((store.pdir(pid) / "meta.json").read_text())
+    meta = json.loads((store.pdir(pid) / "meta.json").read_text(encoding="utf-8"))
     return next(candidates(pid, meta), None) or meta.get("abs_url") or None
 
 

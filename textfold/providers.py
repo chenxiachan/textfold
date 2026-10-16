@@ -75,7 +75,7 @@ MAX_PROVIDERS, MAX_MODELS = 12, 60
 def _read_env_file(f):
     out = {}
     if f.exists():
-        for line in f.read_text(errors="replace").splitlines():
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
             m = re.match(r"^\s*([\w.]+)\s*=\s*(.*?)\s*$", line)
             if m and not line.lstrip().startswith("#"):
                 out[m.group(1)] = m.group(2).strip().strip('"').strip("'")

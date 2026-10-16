@@ -35,7 +35,7 @@ def load_settings():
         shutil.copy2(old_home / "settings.json", SETTINGS)
         os.chmod(SETTINGS, 0o600)
     if SETTINGS.exists():
-        old = json.loads(SETTINGS.read_text())
+        old = json.loads(SETTINGS.read_text(encoding="utf-8"))
         s.update({k: v for k, v in old.items() if k in s})
         if not s["model"] and old.get("backend") == "claude-cli":  # the settings of v0.4
             s["model"] = f"claude/claude-code/{old.get('cli_model') or 'sonnet'}"
@@ -59,7 +59,7 @@ def import_thoughtdag_env(s):
 
 def save_settings(s):
     SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS.write_text(json.dumps(s, indent=1, ensure_ascii=False))
+    SETTINGS.write_text(json.dumps(s, indent=1, ensure_ascii=False), encoding="utf-8")
     os.chmod(SETTINGS, 0o600)
 
 

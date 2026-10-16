@@ -45,8 +45,8 @@ def kind(n):
 def read(pid):
     f = _file(pid)
     if f.exists():
-        return {**json.loads(f.read_text()), "format": FORMAT}   # (an older file's name for the same format, renewed)
-    meta = json.loads((store.pdir(pid) / "meta.json").read_text())
+        return {**json.loads(f.read_text(encoding="utf-8")), "format": FORMAT}   # (an older file's name for the same format, renewed)
+    meta = json.loads((store.pdir(pid) / "meta.json").read_text(encoding="utf-8"))
     return {"format": FORMAT, "version": VERSION,
             "paper": {"id": pid, "version": meta.get("version", ""), "title": meta.get("title", ""), "url": meta.get("abs_url", "")},
             "notes": []}
@@ -55,7 +55,7 @@ def read(pid):
 def _write(pid, data):
     f = _file(pid)
     tmp = f.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(f)
 
 

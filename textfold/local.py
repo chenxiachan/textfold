@@ -128,9 +128,9 @@ def store_doc(pid, html, meta, raw_name, raw, resolver, sizes=False):
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     try:
-        (tmp / "source.html").write_text(semantic.normalize(html, resolve_img=resolver(tmp / "img"), sizes=sizes))
-        (tmp / raw_name).write_text(raw)
-        (tmp / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        (tmp / "source.html").write_text(semantic.normalize(html, resolve_img=resolver(tmp / "img"), sizes=sizes), encoding="utf-8")
+        (tmp / raw_name).write_text(raw, encoding="utf-8")
+        (tmp / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         shutil.rmtree(d, ignore_errors=True)
         tmp.rename(d)
     finally:
@@ -138,6 +138,18 @@ def store_doc(pid, html, meta, raw_name, raw, resolver, sizes=False):
     return pid
 
 
+def _read(p):
+    """A text file as text: UTF-8 first (the encoding of the web, and of this app's own files), then GBK (a Windows
+    file saved in its locale), and as UTF-8 with stand-ins when neither holds. The BOM comes off with -sig."""
+    data = p.read_bytes()
+    for enc in ("utf-8-sig", "gbk"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", "replace")
+
+
 def import_file(path):
     p = Path(path).expanduser().resolve()
-    return import_text(p.read_text(encoding="utf-8", errors="replace"), p.name, p.parent)
+    return import_text(_read(p), p.name, p.parent)

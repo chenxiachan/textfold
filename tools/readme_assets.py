@@ -125,7 +125,7 @@ def notes(browser):
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "logo.svg").write_text(LOGO)
+    (OUT / "logo.svg").write_text(LOGO, encoding="utf-8")
     with sync_playwright() as p:
         b = p.chromium.launch(channel="chrome")
         if not STILLS:

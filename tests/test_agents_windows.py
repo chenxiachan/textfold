@@ -35,7 +35,7 @@ SHIM = textwrap.dedent(r"""
 
 def touch(p, text="", mode=0o755):
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8")
     p.chmod(mode)
     return p
 

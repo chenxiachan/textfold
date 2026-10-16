@@ -66,6 +66,10 @@ function startServer(port) {
     TEXTFOLD_DATA: app.getPath('userData'),
     PYTHONNOUSERSITE: '1',
     PYTHONDONTWRITEBYTECODE: '1',
+    // the locale's codepage (cp936 on a Chinese Windows) is otherwise the default for open() and the pipes, and the
+    // packages the app ships read files of their own: UTF-8 mode makes the whole process, and the children it starts,
+    // read and write UTF-8
+    PYTHONUTF8: '1',
   };
   const log = fs.createWriteStream(path.join(app.getPath('userData'), 'server.log'), { flags: 'a' });
   // (windowsHide: no console window beside the app's own)
