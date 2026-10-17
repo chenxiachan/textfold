@@ -804,7 +804,7 @@ def _epub(path, doc):
                 return doc.picture(z.read(target), Path(target).suffix.lstrip(".").replace("jpg", "jpeg"))
             return src if re.match(r"https?://", src) else None
 
-        Flow(doc, resolve).walk(_fragment(z.read(part)))
+        Flow(doc, resolve).walk(_fragment(_decode(z.read(part))))
         doc.page()
 
 
