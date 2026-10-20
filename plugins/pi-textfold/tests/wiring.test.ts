@@ -41,6 +41,7 @@ function makePi(opts: { branch?: unknown[]; appendEntryThrows?: boolean; digitsF
 	const notifications: string[] = [];
 	const widgets = new Map<string, { factory?: WidgetFactory; content?: string[]; opts?: unknown }>();
 	const transformers: Transformer[] = [];
+	const toolRenderers: ((name: string, next: () => unknown) => unknown)[] = [];
 	const customCaptures: ((tui: unknown, theme: unknown, kb: unknown, done: () => void) => unknown)[] = [];
 	let customDone: (() => void) | undefined;
 	const calls: string[] = [];
@@ -75,6 +76,10 @@ function makePi(opts: { branch?: unknown[]; appendEntryThrows?: boolean; digitsF
 		registerMarkdownTransformer: (t: Transformer) => {
 			transformers.push(t);
 			calls.push("markdownTransformer");
+		},
+		registerToolRenderer: (r: (name: string, next: () => unknown) => unknown) => {
+			toolRenderers.push(r);
+			calls.push("toolRenderer");
 		},
 		registerFlag: (name: string, flag: { type: string; default?: unknown; description?: string }) => {
 			calls.push(`flag:${name}=${String(flag.default)}`);
@@ -151,6 +156,7 @@ function makePi(opts: { branch?: unknown[]; appendEntryThrows?: boolean; digitsF
 		editorWrites,
 		pastes,
 		transformers,
+		toolRenderers,
 	};
 	// The factory-based capture path needs resolve on done: kept where the tests use it.
 }
@@ -594,6 +600,13 @@ describe("what the extension registers", () => {
 		expect(mk.calls).toContain("on:before_agent_start");
 	});
 
+	test("the tool-row resolver runs, alongside the markdown transformer", async () => {
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		expect(mk.toolRenderers).toHaveLength(1);
+	});
+
 	test("a before_agent_start adds the fold style as a section, leaving the other options", async () => {
 		const textfold = await load();
 		const mk = makePi();
@@ -604,5 +617,112 @@ describe("what the extension registers", () => {
 		expect((event.systemPromptOptions.sections as Record<string, string>).keepme).toBe("kept");
 		expect(event.systemPromptOptions.model).toBe("x");
 		expect(out).toEqual({});
+	});
+});
+
+describe("tool rows fold at the level", () => {
+	type Comp = { render: (width: number) => string[]; invalidate?: () => void };
+	const theme: TestTheme = { fg: (_kind: string, s: string) => s, bold: (s: string) => s, dim: (s: string) => s };
+
+	/** A stand-in for Pi's built-in renderers: one call line, four result lines. */
+	function builtIn() {
+		const made: Comp[] = [];
+		const seen: unknown[] = [];
+		const base = {
+			renderShell: "default",
+			renderCall: (args: { command?: string }) => ({ render: () => [` $ ${args.command ?? ""}`] }),
+			renderResult: (_result: unknown, options: { expanded?: boolean }, _theme: unknown, ctx: { lastComponent?: unknown }) => {
+				seen.push(ctx.lastComponent);
+				const component: Comp = options.expanded
+					? { render: () => [" a", " b", " c", " d", " e"], invalidate() {} }
+					: { render: () => ["", " a", " b", " c", " d", ""], invalidate() {} };
+				made.push(component);
+				return component;
+			},
+		};
+		return { base, made, seen };
+	}
+
+	const setLevel = async (mk: ReturnType<typeof makePi>, n: number) => {
+		await mk.press(`alt+${n}`);
+	};
+
+	test("Full and Brief draw Pi's own row; Points keeps two lines; Outline and Gist keep none", async () => {
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		const { base } = builtIn();
+		const wrapped = mk.toolRenderers[0]!("bash", () => base) as typeof base & {
+			renderResult: (r: unknown, o: { expanded: boolean }, t: unknown, c: any) => Comp;
+		};
+
+		const draw = (expanded = false) => {
+			const ctx = { state: {}, lastComponent: undefined, isPartial: false };
+			return wrapped.renderResult({}, { expanded }, theme, ctx).render(80);
+		};
+
+		expect(draw()).toEqual(["", " a", " b", " c", " d", ""]); // Full: byte-identical to Pi
+		await setLevel(mk, 2);
+		expect(draw()).toEqual(["", " a", " b", " c", " d", ""]); // Brief: Pi's preview
+		await setLevel(mk, 3);
+		expect(draw()).toEqual([" a", " b", "… (2 more lines)"]);
+		await setLevel(mk, 4);
+		expect(draw()).toEqual([]);
+		await setLevel(mk, 5);
+		expect(draw()).toEqual([]);
+		await setLevel(mk, 1);
+		expect(draw()).toEqual(["", " a", " b", " c", " d", ""]);
+	});
+
+	test("the call line stays Pi's, and only the result renderer is wrapped", async () => {
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		const { base } = builtIn();
+		const wrapped = mk.toolRenderers[0]!("bash", () => base) as typeof base;
+		expect(wrapped.renderCall).toBe(base.renderCall);
+		expect(wrapped.renderShell).toBe("default");
+	});
+
+	test("the built-in renderer gets its own component back, never our wrapper", async () => {
+		// Pi passes the component we returned last time as lastComponent. The built-in
+		// renderers clear() and addChild() on it, so handing them the wrapper would
+		// nest a wrapper per redraw.
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		const { base, made, seen } = builtIn();
+		const wrapped = mk.toolRenderers[0]!("bash", () => base) as typeof base & {
+			renderResult: (r: unknown, o: { expanded: boolean }, t: unknown, c: any) => Comp;
+		};
+		const state: Record<string, unknown> = {};
+		const first = wrapped.renderResult({}, { expanded: false }, theme, { state, lastComponent: undefined, isPartial: false });
+		expect(seen[0]).toBeUndefined();
+		wrapped.renderResult({}, { expanded: false }, theme, { state, lastComponent: first, isPartial: false });
+		expect(seen[1]).toBe(made[0]);
+		expect(seen[1]).not.toBe(first);
+	});
+
+	test("an expanded row shows everything: asking for one row outranks the fold", async () => {
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		const { base } = builtIn();
+		const wrapped = mk.toolRenderers[0]!("bash", () => base) as typeof base & {
+			renderResult: (r: unknown, o: { expanded: boolean }, t: unknown, c: any) => Comp;
+		};
+		await setLevel(mk, 5);
+		const out = wrapped.renderResult({}, { expanded: true }, theme, { state: {}, lastComponent: undefined, isPartial: false }).render(80);
+		expect(out).toEqual([" a", " b", " c", " d", " e"]);
+	});
+
+	test("tools without a result renderer, and tools Pi does not know, are left alone", async () => {
+		const textfold = await load();
+		const mk = makePi();
+		textfold(mk.pi);
+		const resolver = mk.toolRenderers[0]!;
+		expect(resolver("mystery", () => undefined)).toBeUndefined();
+		const callOnly = { renderShell: "self" as const, renderCall: () => ({ render: () => ["x"] }) };
+		expect(resolver("mystery", () => callOnly)).toBe(callOnly);
 	});
 });
