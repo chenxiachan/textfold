@@ -61,7 +61,7 @@ foldToolLines(lines, level) -> string[]   // non-empty lines only, plus "… (N 
 
 - **Full (1) and Brief (2):** Pi's own row, untouched. Brief is what Pi already does — a preview
   with the expand key — so re-implementing it would only make the row differ from Pi's.
-- **Points (3):** the first two non-empty result lines, then `… (N more lines)`. The command and
+- **Points (3):** the first two non-empty result lines, then `… (N more lines · Alt+1)`. The command and
   its first output lines stay; the tail is one marker line.
 - **Outline (4) and Gist (5):** no result body. The call line stays, so the turn still reads as
   the list of things that happened — at 4 lines a call instead of 13–36.
@@ -140,7 +140,7 @@ wiring must not hide a passing rule.
 
 ## 8. What "done" means
 
-- Alt+3 on a replayed turn shows the first two lines of each result and a marker with the rest;
+- Alt+3 on a replayed turn shows the first two lines of each result and a marker with the rest and the key;
   Alt+4 and Alt+5 leave the call lines and no result bodies; Alt+1 restores Pi's own rows.
 - The existing fold of replies and reasoning is unchanged, and the marker line's claim
   ("Alt+1 unfolds") stays true for what the fold hid.

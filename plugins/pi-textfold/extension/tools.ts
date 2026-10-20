@@ -41,5 +41,5 @@ export function foldToolLines(lines: readonly string[], level: number): string[]
 	if (keep === 0) return [];
 	const shown = content.slice(0, keep);
 	const hidden = content.length - shown.length;
-	return hidden > 0 ? [...shown, `… (${hidden} more line${hidden === 1 ? "" : "s"})`] : shown;
+	return hidden > 0 ? [...shown, `… (${hidden} more line${hidden === 1 ? "" : "s"} · Alt+1)`] : shown;
 }

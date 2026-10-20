@@ -22,7 +22,7 @@ describe("folding a tool result", () => {
 
 	test("Points keeps the first two lines of output and names the rest", () => {
 		const out = foldToolLines(BASH, 3);
-		expect(out).toEqual([" aaa", " bbb", "… (4 more lines)"]);
+		expect(out).toEqual([" aaa", " bbb", "… (4 more lines · Alt+1)"]);
 	});
 
 	test("Outline and Gist keep no result body", () => {
@@ -41,6 +41,6 @@ describe("folding a tool result", () => {
 
 	test("a hidden line count is the non-empty lines the reader cannot see", () => {
 		const many = ["x", "y", "z", "w"].map((s) => ` ${s}`);
-		expect(foldToolLines(many, 3)[2]).toBe("… (2 more lines)");
+		expect(foldToolLines(many, 3)[2]).toBe("… (2 more lines · Alt+1)");
 	});
 });

@@ -377,7 +377,7 @@ extension loaded:
 ```
 Full/Brief  $ printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n'
             ... (4 earlier lines, ctrl+o to expand)   five six seven eight nine   Took 0.0s
-Points      $ printf '…'   ... (4 earlier lines, …)   five   … (5 more lines)
+Points      $ printf '…'   ... (4 earlier lines, …)   five   … (5 more lines · Alt+1)
 Outline     $ printf '…'                                  (no result body)
 Gist        $ printf '…'                                  (no result body)
 ```

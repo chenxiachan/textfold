@@ -665,7 +665,7 @@ describe("tool rows fold at the level", () => {
 		await setLevel(mk, 2);
 		expect(draw()).toEqual(["", " a", " b", " c", " d", ""]); // Brief: Pi's preview
 		await setLevel(mk, 3);
-		expect(draw()).toEqual([" a", " b", "… (2 more lines)"]);
+		expect(draw()).toEqual([" a", " b", "… (2 more lines · Alt+1)"]);
 		await setLevel(mk, 4);
 		expect(draw()).toEqual([]);
 		await setLevel(mk, 5);
