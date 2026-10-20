@@ -1,6 +1,9 @@
 # D4 — Tool rows at the level you read at
 
-Status: **planned, verified in probes, not implemented** (2026-10-20). This document is the
+Status: **implemented** (2026-10-20). Commits: the plan, the rule + 8 tests, the wiring
+(`registerToolRenderer`, 6 wiring tests, preflight now 11 APIs), the docs. Result: 101 tests,
+tsc clean, and a replayed session showing the row at Full/Brief/Points/Outline/Gist and back —
+see `D3-PORT-PLAN.md` §14. This document is the
 design record for the one part of a turn the fold does not reach today: the rows Pi draws for
 tool calls. It is written to be executed commit by commit, and to survive an interrupted run.
 

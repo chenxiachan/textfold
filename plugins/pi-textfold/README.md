@@ -16,6 +16,8 @@ Hold Alt and type the digit, click a level in the row, or type `/fold` and a lev
 
 **Reasoning folds too.** In a coding turn most of the words are thinking: thousands of them around a few hundred words of reply. Reasoning is folded at the same level by the same rule, so the fold covers what the turn actually did rather than only its closing paragraph. The reader's own message is never touched.
 
+**Tool rows fold too.** A command line stays; its output folds with the level: Pi's own preview at Full and Brief, the first two lines and a count of the rest at Points, nothing but the call at Outline and Gist. So a turn reads as the list of what happened, not the log of it — 623 lines of tool rows become 151 in a measured 21-call turn. Pi's expand key still shows one row in full whatever the level, and Alt+1 brings every row back.
+
 **Every reply at once.** A new level folds every reply in place, the earlier ones too, and the row above the prompt shows the five levels, the one you read at marked. Pi keeps each reply as it drew it, so the extension has the whole conversation drawn again when the level changes.
 
 **The level survives a restart.** Each change is written to the session, and starting Pi again — or resuming a session — comes back at the level you read at; nothing is written twice for the same level. A restart tells you it restored, and the panel (below) names it even before any reply arrives.

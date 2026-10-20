@@ -350,3 +350,40 @@ still blob-equal to `plugins/textfold/hooks/fold.ts`, the Outline fix included.
 in that plugin's own harness, not here.
 
 ---
+
+## 14. Tool rows (2026-10-20)
+
+The fold covered replies and reasoning, not tool rows: they are components, not
+Markdown, so `registerMarkdownTransformer` never saw them. Measured on a
+recorded turn (21 calls, bash/write/edit), the rows came to **623 rendered
+lines**, and a whole session's 983 calls to 19,227 — one bash row is 13 lines
+(call, five preview lines, a hidden-lines marker, the timer), one edit row 36.
+
+`registerToolRenderer` closes the gap without redrawing anything: the built-in
+renderer still draws the row, and a wrapper keeps only the lines the level
+wants.
+
+| Change | Why | Evidence |
+|---|---|---|
+| `extension/tools.ts` (new) | The rule is the fold's: remove, never invent | `toolResultKeep` = 5/5/2/0/0 for Full…Gist; `foldToolLines` drops padding and names what it hid | 8 unit tests |
+| Wrapped result renderer (`extension/index.ts`) | Pi hands the resolver the built-in renderers, including for tools it does not own | A live replay logged 13 resolvers: bash/read/edit, each `call=true result=true`, `edit` shell=self |
+| The level is read when the row draws | A plain `requestRender` does **not** re-render a row: Alt+3/4/5 produced 0 renderer calls. `invalidate()` produced 26 | The level-change path already invalidates the screen, so no new redraw path was needed |
+| An expanded row is never folded | Pi's expand key is the reader naming one row in full | wiring test |
+| The built-in renderer gets its own component back | `bash.js` clears and re-fills `lastComponent`; handing it the wrapper would nest a wrapper per redraw | the wrapper keeps the inner component in `context.state`; wiring test asserts `seen[1]` is the inner, not the wrapper |
+
+Verified on a replayed session (no model call, `small.jsonl` + tmux), with the
+extension loaded:
+
+```
+Full/Brief  $ printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n'
+            ... (4 earlier lines, ctrl+o to expand)   five six seven eight nine   Took 0.0s
+Points      $ printf '…'   ... (4 earlier lines, …)   five   … (5 more lines)
+Outline     $ printf '…'                                  (no result body)
+Gist        $ printf '…'                                  (no result body)
+```
+
+Gates: **101 tests**, `tsc --noEmit` clean, preflight **11 APIs** (it now checks
+`registerToolRenderer` and `ToolRenderContext`), replay at 1/3/4/5 as above.
+Rows keep a four-line floor at Outline/Gist (Pi's box padding around the call
+line); a `renderShell: "self"` row would cost two, but the shell is fixed when
+the row is built, so Full would lose Pi's box — not worth it.
