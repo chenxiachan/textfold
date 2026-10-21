@@ -1,9 +1,10 @@
 # D4 — Tool rows at the level you read at
 
-Status: **implemented** (2026-10-20). Commits: the plan, the rule + 8 tests, the wiring
-(`registerToolRenderer`, 6 wiring tests, preflight now 11 APIs), the docs. Result: 101 tests,
-tsc clean, and a replayed session showing the row at Full/Brief/Points/Outline/Gist and back —
-see `D3-PORT-PLAN.md` §14. This document is the
+Status: **implemented** (2026-10-20), rebased onto `origin/main` (2026-10-21) where the suite is
+**103 tests**, `tsc` clean, preflight 11 APIs. Commits: the plan, the rule + 8 tests, the wiring
+(`registerToolRenderer`, 6 wiring tests), the docs. Verified on a replayed session and on a live
+model turn — the row at Full/Brief/Points/Outline/Gist and back; see `D3-PORT-PLAN.md` §14–§15.
+This document is the
 design record for the one part of a turn the fold does not reach today: the rows Pi draws for
 tool calls. It is written to be executed commit by commit, and to survive an interrupted run.
 
@@ -77,13 +78,10 @@ hides anything ends in a marker that names how much is hidden and that Alt+1 res
 - **The tap already exists**: `TEXTFOLD_PI_DEBUG=1` writes every shortcut/apply/restore/fold
   decision to `TEXTFOLD_PI_DEBUG_FILE`. Add one field for tool rows: tool name, level, kept and
   total lines, and whether the result or the row was hidden.
-- **A deterministic replay** (built for this round, kept as a probe): `make_fixture.py` extracts
-  a real turn (bash/read/edit + results) from a recorded session into a 21-entry session file;
-  `run_fixture.py` replays it under tmux with the extension and captures the screen at each
-  level. No model call, no quota, ~8 s per run — the way to see a row change without waiting for
-  a provider.
-- **The probe extension** (`run_fixture.py` + `probe.ts`) is throwaway; the plan's tests are
-  the durable form.
+- **A deterministic replay** (throwaway, not shipped): a recorded turn (bash/read/edit +
+  results) is copied into a fresh session file, replayed under `tmux` with the extension, and
+  the screen captured at each level. No model call, no quota, ~8 s per run — the way to see a
+  row change without waiting for a provider. The durable form is the unit tests below.
 - Unit tests own the rule (`foldToolLines`) and the wiring (resolver returns a result renderer
   that reads the level, passes `state` through, and leaves `renderCall` alone).
 

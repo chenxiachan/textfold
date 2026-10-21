@@ -1,6 +1,7 @@
 # TextFold for Pi — D3 port: detailed implementation plan
 
-**Status: PLAN ONLY — no implementation starts from this file until it is approved.**
+**Status: implemented** (2026-10-19 to 2026-10-21). The branch is rebased onto
+`origin/main` and green there; §13–§15 are the log of each round.
 Revised after a critical audit of the first draft (corrections listed in § 10).
 
 Ports C1 (level persistence + restore), C2 (`--textfold-digits` digit-guard) and the fold-preview
@@ -9,11 +10,10 @@ panel onto **origin/main's refactored** plugin (the maintainer's level-row desig
 lacks. Every pi-API assumption was verified live on pi 1.3.0 before this plan was written
 (§ 3 — including one hypothesis the first draft wrongly claimed as verified, see VH6).
 
-- Working repo: `/tmp/textfold` (branch `pi-textfold`, base is 23 commits behind `origin/main`)
 - Upstream: `origin/main` = `https://github.com/chenxiachan/textfold.git`
-- Installed pi: 1.3.0 at `~/.npm-global/.../pi-coding-agent/dist/bundle/cli.js`, Node 22
-  (`export PATH="$HOME/.local/node22/bin:$PATH"` required by every gate)
-- Durations in § 5 measured 2026-10-19 on this machine
+- The plugin is ported into upstream's own layout (`plugins/pi-textfold/`), not a fork of it
+- Verified on the installed pi 1.3.0, Node 22; pi 1.2.0 is the declared floor
+- Durations in § 5 were measured on one machine on 2026-10-19; read them as orders of magnitude
 
 ---
 
@@ -387,3 +387,44 @@ Gates: **101 tests**, `tsc --noEmit` clean, preflight **11 APIs** (it now checks
 Rows keep a four-line floor at Outline/Gist (Pi's box padding around the call
 line); a `renderShell: "self"` row would cost two, but the shell is fixed when
 the row is built, so Full would lose Pi's box — not worth it.
+
+---
+
+## 15. The live run, and the rebase (2026-10-21)
+
+The replay above proves the rule against real Pi components but feeds them a
+recorded turn. A live session closes that last gap: the extension installed the
+way a user installs it (`~/.pi/agent/settings.json` → `packages`), a real model
+turn that called `bash seq 1 40`, `ls -R .` and `read notes.txt`, then the keys.
+
+```
+Full    $ seq 1 40
+        ... (35 earlier lines, ctrl+o to expand)   36 37 38 39 40   Took 0.0s
+Points  $ seq 1 40   ... (35 earlier lines, …)   36   … (5 more lines · Alt+1)
+Outline $ seq 1 40                                       (no result body)
+Gist    $ seq 1 40                                       (no result body)
+```
+
+The tap from that session, on the installed extension:
+
+```
+tool rows folded by the level
+tool bash level=3 lines=3/5
+tool bash level=3 lines=3/9
+tool bash level=4 lines=0/9
+tool bash level=5 lines=0/9
+```
+
+Pi's own expand key (`ctrl+o`) still showed the whole row at Gist, and Alt+1
+brought every result back. Two things about the harness, kept here so the next
+run does not repeat them: `albert-deepseek-v4-flash` answered that prompt with
+empty text and no tool call through the local router (a tool-calling model is
+required to see a tool row at all), and a second `ctrl+o` did not re-collapse a
+row — expand was proven, collapse after expand was not.
+
+**Rebase.** `origin/main` had moved 38 commits (to `cdad27c`) while this branch
+sat on `5a5de9d`, so the five commits were replayed onto the new head. It applied
+without a conflict; the suite on top of `cdad27c` is **103 tests** (upstream added
+two), `tsc --noEmit` clean, preflight 11 APIs. Nothing outside
+`plugins/pi-textfold/` changes in this round: the engine updates and the
+six-line Outline fallback were merged into main before the rebase.
