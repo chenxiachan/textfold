@@ -1,8 +1,8 @@
 # TextFold for Pi
 
-Your agent writes more than you have time to read. TextFold folds every reply in [Pi](https://pi.dev) — and the reasoning behind it — to the level you need, from every word to the answer in one sentence, with one key. It is the fold of [TextFold for Claude Code](../textfold/README.md), as a Pi extension, from [TextFold](../../README.md).
+Your agent writes more than you have time to read. TextFold folds every reply in [Pi](https://pi.dev) — and the reasoning behind it — to the level you need, from every word to the answer in one sentence, with one key. It is the fold of [TextFold for Claude Code](https://github.com/chenxiachan/textfold/tree/main/plugins/textfold), as a Pi extension, from [TextFold](https://github.com/chenxiachan/textfold#readme).
 
-<img src="../../docs/assets/pi-think.gif" width="880" alt="A coding turn in Pi, its thinking and its reply, folding a level at a time until each is one sentence, by key and by a click on the row">
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/pi-think.gif" width="880" alt="A coding turn in Pi, its thinking and its reply, folding a level at a time until each is one sentence, by key and by a click on the row">
 
 | Key | Level | What you get |
 |:-:|---|---|
@@ -50,6 +50,6 @@ Pi keeps the path, so leave the clone where it is. To try it for one session wit
 - The section changes the order of what the model writes, not what it says or how much. Pi runs many models: check on your own work that yours leads with the point, and does its work as well as before.
 - `extension/fold.ts` is the Claude Code mod's own engine, and the section is the mod's own text. A test keeps both the same, so a reply folds the same way in Claude Code and in Pi.
 
-The tests run with `npm install && npm test` in this folder. `tests/tui_smoke.py` drives the real Pi with a model and checks the keys; its first lines say how to run it.
+The tests run with `npm install && npm test` in the repository's `plugins/pi-textfold/` folder (they are not part of the published tarball). `tests/tui_smoke.py` drives the real Pi with a live model and checks the keys; its first lines say how to run it.
 
 TextFold for Pi was contributed by [Joseph Lam](https://github.com/jlamweil).
