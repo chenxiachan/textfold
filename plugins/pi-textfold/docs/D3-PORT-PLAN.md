@@ -384,9 +384,12 @@ Gist        $ printf '…'                                  (no result body)
 
 Gates: **101 tests**, `tsc --noEmit` clean, preflight **11 APIs** (it now checks
 `registerToolRenderer` and `ToolRenderContext`), replay at 1/3/4/5 as above.
-Rows keep a four-line floor at Outline/Gist (Pi's box padding around the call
-line); a `renderShell: "self"` row would cost two, but the shell is fixed when
-the row is built, so Full would lose Pi's box — not worth it.
+Rows keep a four-line floor at Outline/Gist, and none of it is the fold's: Pi
+adds a `Spacer(1)` above every tool row, the row's `Box` has `paddingY = 1`
+(top and bottom), and the call line is the fourth. Only `renderShell: "self"`
+avoids the box (two lines fewer), but the shell is fixed when the row is built,
+so every row would lose Pi's box at Full as well — not worth it. The fold only
+removes the result lines it can (`toolResultKeep` 0), and the box stays.
 
 ---
 
@@ -416,11 +419,16 @@ tool bash level=5 lines=0/9
 ```
 
 Pi's own expand key (`ctrl+o`) still showed the whole row at Gist, and Alt+1
-brought every result back. Two things about the harness, kept here so the next
-run does not repeat them: `albert-deepseek-v4-flash` answered that prompt with
-empty text and no tool call through the local router (a tool-calling model is
-required to see a tool row at all), and a second `ctrl+o` did not re-collapse a
-row — expand was proven, collapse after expand was not.
+brought every result back. A second `ctrl+o` folds the row again — proven in a
+separate session at Outline with `seq 1 9`: the row went from the call line only
+to `1 … 9` + `Took 0.0s` and back, Pi's status line saying `Tool output:
+expanded` then `collapsed`. (The first attempt at this looked like a failure
+because it ran at Full, where there is nothing to expand, and because the
+startup-help header shares the key: test the toggle at a level that folds.)
+
+One harness fact worth keeping: `albert-deepseek-v4-flash` answered the tool
+prompt with empty text and no tool call through the local router, so a
+live tool-row run needs a tool-calling model.
 
 **Rebase.** `origin/main` had moved 38 commits (to `cdad27c`) while this branch
 sat on `5a5de9d`, so the five commits were replayed onto the new head. It applied
