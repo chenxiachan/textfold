@@ -39,6 +39,12 @@ Nothing is paraphrased. TextFold adds a short section to the system prompt that 
 It needs Pi 1.2.0 or later, on Node 22.15 or later — every behavior above is verified on Pi 1.3.0; `--textfold-digits` is only as old as its flag support in Pi (the preflight script `scripts/check-pi-api.py` checks the APIs it needs against your installed pi).
 
 ```bash
+pi install npm:pi-textfold
+```
+
+Or from a clone, which is what you want to hack on it:
+
+```bash
 git clone https://github.com/chenxiachan/textfold.git
 pi install ./textfold/plugins/pi-textfold
 ```
