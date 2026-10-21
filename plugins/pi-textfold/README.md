@@ -39,12 +39,6 @@ Nothing is paraphrased. TextFold adds a short section to the system prompt that 
 It needs Pi 1.2.0 or later, on Node 22.15 or later — every behavior above is verified on Pi 1.3.0; `--textfold-digits` is only as old as its flag support in Pi (the preflight script `scripts/check-pi-api.py` checks the APIs it needs against your installed pi).
 
 ```bash
-pi install npm:pi-textfold
-```
-
-Or from a clone, which is what you want to hack on it:
-
-```bash
 git clone https://github.com/chenxiachan/textfold.git
 pi install ./textfold/plugins/pi-textfold
 ```
@@ -56,6 +50,6 @@ Pi keeps the path, so leave the clone where it is. To try it for one session wit
 - The section changes the order of what the model writes, not what it says or how much. Pi runs many models: check on your own work that yours leads with the point, and does its work as well as before.
 - `extension/fold.ts` is the Claude Code mod's own engine, and the section is the mod's own text. A test keeps both the same, so a reply folds the same way in Claude Code and in Pi.
 
-The tests run with `npm install && npm test` in the repository's `plugins/pi-textfold/` folder (they are not part of the published tarball). `tests/tui_smoke.py` drives the real Pi with a live model and checks the keys; its first lines say how to run it.
+The tests run with `npm install && npm test` in the repository's `plugins/pi-textfold/` folder. `tests/tui_smoke.py` drives the real Pi with a live model and checks the keys; its first lines say how to run it.
 
 TextFold for Pi was contributed by [Joseph Lam](https://github.com/jlamweil).
