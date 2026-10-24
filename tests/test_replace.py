@@ -333,19 +333,21 @@ class Server(Base):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
-    def test_import_with_an_id_replaces_the_text(self):
+    def test_import_with_an_id_cannot_replace_original_source(self):
         code, got = self.post("/api/import", {"name": "diary.md", "text": TEXT})
         self.assertEqual((code, set(got)), (200, {"paper", "title"}))
         pid = got["paper"]
         code, got = self.post("/api/import", {"name": "diary.md", "text": TEXT.replace("# Heat pump diary", "# Diary"), "id": pid})
-        self.assertEqual((code, got), (200, {"paper": pid, "title": "Diary", "replaced": True}))
-        self.assertEqual(self.post("/api/import", {"text": TEXT, "id": "md-gone-12345678"})[0], 404)
-        self.assertEqual(self.post("/api/import", {"text": TEXT, "id": "../papers"})[0], 404)
+        self.assertEqual(code, 409)
+        self.assertIn('immutable', got['error'])
+        self.assertEqual((store.pdir(pid) / "source.md").read_text(encoding="utf-8"), TEXT)
+        self.assertEqual(self.post("/api/import", {"text": TEXT, "id": "md-gone-12345678"})[0], 409)
+        self.assertEqual(self.post("/api/import", {"text": TEXT, "id": "../papers"})[0], 409)
 
     def test_no_replace_while_it_is_generated(self):
         pid = self.post("/api/import", {"name": "diary.md", "text": TEXT})[1]["paper"]
         self.jobs.running.append(pid)
-        self.assertEqual(self.post("/api/import", {"text": "# Other\n\nWords.", "id": pid}), (409, {"error": "busy"}))
+        self.assertEqual(self.post("/api/import", {"text": "# Other\n\nWords.", "id": pid})[0], 409)
         self.assertEqual((store.pdir(pid) / "source.md").read_text(encoding="utf-8"), TEXT)
 
 

@@ -18,6 +18,7 @@ elsewhere, its address and its data folder ("base", "data_dir"), which only that
 server at another address, or at another folder to read files from.
 """
 import json
+import copy
 import re
 import threading
 import urllib.error
@@ -138,7 +139,7 @@ def items(lib, collection="", q=""):
         if it["type"] in SKIP_TYPES or not KEY.fullmatch(it["key"]):
             continue
         pid = opened.get(f"{lib}/{it['key']}", "")
-        it["paper"] = pid if pid and store.valid_id(pid) and (store.pdir(pid) / "meta.json").exists() else ""
+        it["paper"] = pid if pid and store.valid_id(pid) and store.has(pid) else ""
         out.append(it)
     return out
 
@@ -255,7 +256,7 @@ def _links_file():
 
 def links():
     try:
-        return {k: v["paper"] for k, v in json.loads(store.read_text(_links_file())).items()}
+        return {k: v["paper"] for k, v in store.repository().library().zotero.items()}
     except (OSError, ValueError, KeyError, TypeError):
         return {}
 
@@ -264,7 +265,7 @@ def citekeys():
     """Each document's citekey, for the documents read from an item that has one: as the item's record has it, Zotero's
     when the item was read (the last item read, when several became one document, as apply takes it)."""
     try:
-        data = json.loads(store.read_text(_links_file()))
+        data = store.repository().library().zotero
     except (OSError, ValueError):
         return {}
     out = {}
@@ -276,17 +277,16 @@ def citekeys():
 
 
 def link(lib, key, pid, title, record=None):
-    f = _links_file()
     with _lock:
+        from . import library
         try:
-            data = json.loads(store.read_text(f))
+            base = store.repository().library()
         except (OSError, ValueError):
-            data = {}
-        data[f"{lib}/{key}"] = {"paper": pid, "title": title, **({"record": record} if record else {})}
-        f.parent.mkdir(parents=True, exist_ok=True)
-        tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(f)
+            from .documents import LibraryState
+            base = LibraryState()
+        state = copy.deepcopy(base)
+        state.zotero[f"{lib}/{key}"] = {"paper": pid, "title": title, **({"record": record} if record else {})}
+        library.commit(base, state)
 
 
 def apply(pid):
@@ -295,10 +295,9 @@ def apply(pid):
     and when the item is read (a document read at once, or read before); True when it changed."""
     if not pid.startswith(("pdf-", "doc-")):
         return False
-    mf = store.pdir(pid) / "meta.json"
     try:
-        data = json.loads(store.read_text(_links_file()))
-        meta = json.loads(store.read_text(mf))
+        data = store.repository().library().zotero
+        meta = store.document(pid).meta
     except (OSError, ValueError):
         return False
     found = [(where, v) for where, v in data.items() if isinstance(v, dict) and v.get("paper") == pid and v.get("record")]
@@ -313,5 +312,6 @@ def apply(pid):
         meta["abs_url"] = rec.get("url") or f"https://doi.org/{rec['doi']}"
     meta["label"] = f"Zotero · {rec.get('citekey') or (meta.get('source') or {}).get('name') or meta['title']}"
     meta["zotero"] = {"library": lib, "item": key, "citekey": rec.get("citekey", "")}
-    mf.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    with store.edit(pid) as document:
+        document.meta = meta
     return True

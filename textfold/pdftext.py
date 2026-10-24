@@ -10,6 +10,8 @@ A scan, or a PDF whose text cannot be read (a broken font encoding), still needs
 read by a model. What this reading leaves out, the engine gives: formulas as LaTeX, a figure no caption names, each
 paragraph's place on its page for the side-by-side view. A PDF read this way can be converted accurately later, once
 the engine is installed (its tier is "text", not "accurate")."""
+from . import store
+
 import html
 import json
 import re
@@ -483,6 +485,7 @@ def convert(file, out):
     return out
 
 
+@store.in_document
 def save(pid, file, name):
     """A PDF read by TextFold itself and stored as a document (pdfdoc.store_pdf, as the engine's are), the file kept
     beside it as source.pdf; False when it needs the engine (or pdf-inspector cannot open it: the engine may)."""

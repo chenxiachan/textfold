@@ -61,6 +61,52 @@ class AskStop(unittest.TestCase):
             self.ask("r-mine")
         self.assertEqual(len(self.thread()), 2)
 
+    def test_completed_request_is_not_sent_to_model_again(self):
+        with mock.patch.object(llm, 'call', return_value=(REPLY, None)) as called:
+            self.ask('r-replay'); self.ask('r-replay')
+        self.assertEqual(called.call_count, 1)
+
+    def test_parallel_questions_keep_the_parent_context_and_both_answers(self):
+        import concurrent.futures, threading
+        from textfold import sync_records
+        parent = sync_records.messages(NOTE)[-1]['id']
+        barrier = threading.Barrier(2)
+        def answer(*a, **k):
+            barrier.wait(timeout=5)
+            return REPLY, None
+        with mock.patch.object(llm, 'call', side_effect=answer), concurrent.futures.ThreadPoolExecutor(2) as pool:
+            futures = [pool.submit(notes.ask, PID, NOTE['id'], question, {'id': 'fake'}, req=req, parent=parent)
+                       for question, req in [('Phone question', 'r-phone'), ('Laptop question', 'r-laptop')]]
+            for f in futures: f.result(timeout=10)
+        note = notes.read(PID)['notes'][0]
+        self.assertEqual(set(sync_records.branches(note)), {'r-phone-a', 'r-laptop-a'})
+        self.assertEqual([t['q'] for t in notes.turns(note, 'r-phone-a')], ['What is asked first?', 'Phone question'])
+        self.assertEqual([t['q'] for t in notes.turns(note, 'r-laptop-a')], ['What is asked first?', 'Laptop question'])
+
+    def test_stale_browser_text_and_independent_color_preserve_conflict_revisions(self):
+        stale = notes.present(notes.read(PID))['notes'][0]
+        changed = {**stale, 'text': 'Remote text', 'color': 'blue'}
+        notes.put(PID, changed)
+        notes.put(PID, {**stale, 'text': 'Offline text'})
+        data = notes.read(PID)
+        self.assertEqual(data['notes'][0]['color'], 'blue')
+        self.assertEqual({v['text'] for v in data['conflicts'][0]['variants']}, {'Remote text', 'Offline text'})
+        self.assertNotIn('_base', data['notes'][0])
+        conflict = data['conflicts'][0]
+        selected = next(i for i, v in enumerate(conflict['variants']) if v['text'] == 'Offline text')
+        notes.resolve(PID, conflict['id'], selected)
+        self.assertEqual(notes.read(PID)['notes'][0]['text'], 'Offline text')
+        self.assertEqual(notes.read(PID)['notes'][0]['color'], 'blue')
+        self.assertEqual(notes.read(PID).get('conflicts'), [])
+
+    def test_deleted_note_is_not_resurrected_by_a_stale_browser(self):
+        stale = notes.present(notes.read(PID))['notes'][0]
+        notes.delete(PID, stale['id'])
+        notes.put(PID, {**stale, 'text': 'Edit made after deletion'})
+        data = notes.read(PID)
+        self.assertEqual(data['notes'], [])
+        self.assertEqual(data['conflicts'][0]['variants'][1]['text'], 'Edit made after deletion')
+
 
 if __name__ == "__main__":
     unittest.main()

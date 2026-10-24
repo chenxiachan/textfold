@@ -151,7 +151,7 @@
       }
       const langs = p.langs.map((l) => `<span${l === readLang ? ' class="on"' : ''}>${SHORT[l] || l.toUpperCase()}</span>`).join('');
       const active = PAPER && PAPER.id === p.id;
-      const unfinished = !j && !p.langs.length;   // stopped (or failed) before its first language: a click goes on with it
+      const unfinished = !j && !p.langs.length && !p.readable;   // a cached original can be read without generating levels
       return `<div class="sb-row${chosen.has(p.id) ? ' chosen' : ''}" data-pid="${p.id}" data-q="${esc(hay(p))}"><a class="sb-item${active ? ' active' : ''}${unfinished ? ' unfinished' : ''}" href="${unfinished ? '#' : `/p/${p.id}?lang=${pick(p)}`}"${unfinished ? ` data-resume="${p.id}"` : ''} title="${esc(p.title)}">
         <span class="sb-t">${esc(title)}</span><span class="sb-m"><span class="sb-id">${p.id}</span><span class="sb-langs">${langs}</span></span>
         ${j ? progress(j, T) : unfinished ? `<span class="sb-stage">${esc(T.unfinished)}</span>` : ''}</a>` +
@@ -1122,6 +1122,8 @@
   const landing = document.getElementById('landing');
   function renderLanding() {
     const T = t();
+    const storageError = document.getElementById('storage-error');
+    if (storageError) { storageError.hidden = !BOOT.storageError; storageError.textContent = BOOT.storageError ? `${T.cloud_unavailable} ${BOOT.storageError}` : ''; }
     document.documentElement.lang = I18N.htmlLang(uiLang);
     document.getElementById('h-tagline').textContent = T.hero;
     document.getElementById('ref').placeholder = T.placeholder;
@@ -1472,10 +1474,84 @@
     const tests = {};         // the last connection test of each model: the levels' (gen), the questions' (ask)
     let bridgeStarting = false, bridgeState = null;
     const dlg = h('dialog', 'settings prefs'); document.body.append(dlg);
+    let storageDraft = null, storageBusy = false, storageError = '';
+    let cloudDraft = null, cloudBusy = false, cloudError = '', cloudTested = false;
+    let syncState = null, syncError = '', conflicts = [], conflictCount = -1;
     dlg.addEventListener('close', () => { settingsOpen = false; });
     const T = () => t();
     const host = (u) => { try { return new URL(u).host; } catch { return u; } };
     const groupName = (g) => (data.agents.find((a) => a.runtime === g) || {}).label || (data.providers.find((p) => p.key === g) || {}).name || g;
+
+    function storageSection() {
+      const t = T(), s = data.storage?.local || data.storage, c = data.cloudStorage;
+      if (!s) return `<h3>${esc(t.storage_title)}</h3><p class="st-note" role="status">${esc(t.st_scanning)}</p>`;
+      if (!cloudDraft && c) cloudDraft = { enabled: c.enabled, url: c.url, username: c.username, password: '', cache_path: c.cachePath || '' };
+      const d = cloudDraft || { enabled: false }, disabled = storageBusy || cloudBusy ? ' disabled' : '';
+      return `<h3>${esc(t.storage_title)}</h3>
+        <div class="st-form st-storage-form">
+          <label for="st-cloud-mode">${esc(t.cloud_mode)}<select id="st-cloud-mode"${disabled}><option value="local"${d.enabled ? '' : ' selected'}>${esc(t.cloud_local)}</option><option value="cloud"${d.enabled ? ' selected' : ''}>${esc(t.cloud_title)}</option></select></label>
+          ${d.enabled ? `<label for="st-cloud-url">${esc(t.cloud_url)}<input id="st-cloud-url" type="url" placeholder="https://storage.example.com" autocomplete="url" spellcheck="false" value="${esc(d.url)}"${disabled}></label>
+          <div class="st-cloud-credentials"><label for="st-cloud-user">${esc(t.cloud_username)}<input id="st-cloud-user" autocomplete="username" value="${esc(d.username)}"${disabled}></label>
+          <label for="st-cloud-password">${esc(t.cloud_password)}<input id="st-cloud-password" type="password" autocomplete="new-password" placeholder="${esc(c?.hasPassword ? t.cloud_kept : '')}" value="${esc(d.password)}"${disabled}></label></div>
+          <label for="st-cache-path">${esc(t.sync_cache)}<div class="st-storage-path"><input id="st-cache-path" type="text" spellcheck="false" autocomplete="off" value="${esc(d.cache_path)}" placeholder="${esc(t.sync_cache_default)}"${disabled}>
+          ${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-cache-pick"${disabled}>${esc(t.storage_choose)}</button>` : ''}</div></label>
+          <p class="st-note">${esc(t.sync_cloud_explain)}</p>` : `
+          <div class="st-storage-current"><span class="st-meta">${esc(t.storage_current)}</span><code>${esc(s.path)}</code></div>
+          <label for="st-storage-path">${esc(t.storage_destination)}<div class="st-storage-path"><input id="st-storage-path" class="st-storage-input" type="text" spellcheck="false" autocomplete="off" value="${esc(storageDraft ?? (s.pending || s.path))}"${disabled}>
+          ${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-storage-pick"${disabled}>${esc(t.storage_choose)}</button>` : ''}</div></label>
+          <p class="st-note">${esc(t.storage_explain)}</p>
+          ${s.pending ? `<p class="st-note ok">${esc(t.storage_pending)} <code>${esc(s.pending)}</code></p>` : ''}`}
+          ${c?.restartRequired ? `<p class="st-note ok" role="status">${esc(t.cloud_restart)}</p>` : ''}
+          ${cloudTested ? `<p class="st-note ok" role="status">${esc(t.test_ok)}</p>` : ''}
+          ${storageError || cloudError || s.error || c?.error ? `<p class="st-note warn" role="alert">${esc(storageErrorMessage(storageError || cloudError || s.error || c.error))}</p>` : ''}
+          <div class="st-row end">${!d.enabled && s.pending ? `<button type="button" class="st-btn st-storage-cancel"${disabled}>${esc(t.storage_cancel)}</button>` : ''}
+          ${d.enabled ? `<button type="button" class="st-btn st-cloud-test"${disabled}>${esc(t.cloud_test)}</button>` : ''}
+          <button type="button" class="st-btn st-storage-save"${disabled}>${esc(storageBusy || cloudBusy ? t.storage_saving : t.storage_save)}</button></div>
+        </div><div class="st-sync">${syncSection()}</div>`;
+    }
+
+    function syncSection() {
+      if (data.cloudStorage?.active !== 'cloud') return conflicts.length ? `<h4>${esc(T().sync_conflicts.replace('{n}', conflicts.length))}</h4>${conflictSection()}` : '';
+      const t = T(), s = syncState || data.cloudStorage.sync;
+      if (!s) return '';
+      const busy = s.syncing ? ' disabled' : '', local = data.storage?.local || data.storage;
+      return `<div class="st-sync-status" role="status"><b>${esc(s.syncing ? t.sync_busy : s.online ? t.sync_online : t.sync_offline)}</b>
+        <span>${esc(t.sync_pending.replace('{n}', s.pending))} · ${esc(t.sync_conflicts.replace('{n}', s.conflicts))}</span></div>
+        <p class="st-note">${esc(t.sync_cache)}: <code>${esc(s.cachePath)}</code></p>
+        ${s.lastSync ? `<p class="st-note">${esc(t.sync_last)} ${esc(new Date(s.lastSync * 1000).toLocaleString())}</p>` : ''}
+        ${s.error || syncError ? `<p class="st-note warn" role="alert">${esc(syncError || s.error)}</p>` : ''}
+        <div class="st-sync-actions"><button type="button" class="st-btn" data-sync="sync"${busy}>${esc(t.sync_now)}</button>
+        <button type="button" class="st-btn" data-sync="import"${busy}>${esc(t.sync_import)}</button>
+        <button type="button" class="st-btn" data-sync="download"${busy}>${esc(t.sync_download)}</button>
+        <button type="button" class="st-btn" data-sync="clear"${busy}>${esc(t.sync_clear)}</button>
+        ${s.pending || s.conflicts ? `<a class="st-btn" href="/api/storage/export" download="textfold-pending.zip">${esc(t.sync_export)}</a>` : ''}</div>
+        <p class="st-note">${esc(t.sync_import_from)} <code>${esc(local?.path)}</code> · ${esc(t.sync_import_safe)}</p>
+        ${s.job ? `<p class="st-note">${esc(t['sync_' + s.job.action] || s.job.action)}: ${s.job.done}/${s.job.total}${s.job.error ? ` · ${esc(s.job.error)}` : ''}</p>` : ''}
+        ${s.import ? `<p class="st-note">${esc(t.sync_import_result.replace('{n}', s.import.imported).replace('{k}', s.import.conflicts.length))}${s.import.conflicts.length ? `<br>${s.import.conflicts.map(esc).join(', ')}` : ''}</p>` : ''}
+        ${conflictSection()}`;
+    }
+
+    function conflictSection() {
+      const t = T();
+      const preview = (c, v) => {
+        if (v === null) return `<p>${esc(t.sync_keep_deleted)}</p>`;
+        if (c.key.startsWith('annotation/')) return `${v.anchor?.quote?.exact ? `<blockquote>${esc(v.anchor.quote.exact)}</blockquote>` : ''}<pre>${esc(v.text || (v.kind === 'ask' ? t.n_chat : t.sync_annotation))}</pre><p class="st-meta">${esc([v.color, v.updated].filter(Boolean).join(' · '))}</p>`;
+        const full = JSON.stringify(v, null, 2);
+        return `<pre>${esc(full.slice(0, 4000))}${full.length > 4000 ? '…' : ''}</pre>${full.length > 4000 ? `<p class="st-note">${esc(t.sync_preview)}</p>` : ''}`;
+      };
+      return conflicts.map((c, i) => `<details class="st-conflict" data-conflict="${i}"><summary>${esc(c.title || c.document)} · ${esc(c.key.startsWith('annotation/') ? t.sync_annotation : c.key)}</summary>
+          ${c.key === 'document-state' ? `<p>${esc(t.sync_deleted)}</p><button type="button" class="st-btn" data-choice="restore">${esc(t.sync_restore)}</button> <button type="button" class="st-btn" data-choice="delete">${esc(t.sync_keep_deleted)}</button>` :
+          `<p class="st-note">${esc(t.sync_revision_hint)}</p><div class="st-conflict-variants">${c.variants.map((v, k) => `<div>${preview(c, v)}<button type="button" class="st-btn" data-choice="${k}">${esc(t.sync_choose.replace('{n}', k + 1))}</button></div>`).join('')}</div>
+          ${c.key.startsWith('annotation/') && c.variants.some((v) => v) ? `<label>${esc(t.sync_manual)}<textarea class="st-conflict-text" rows="4">${esc(c.variants.find((v) => v)?.text || '')}</textarea></label><button type="button" class="st-btn" data-manual="true" data-choice="${c.variants[0] ? 0 : 1}">${esc(t.sync_resolve)}</button>` : ''}`}</details>`).join('');
+    }
+
+    function storageErrorMessage(message) {
+      const t = T();
+      if (/absolute.*path/i.test(message)) return t.storage_absolute;
+      if (/empty folder/i.test(message)) return t.storage_empty;
+      if (/contain, or be inside|overlapping/i.test(message)) return t.storage_overlap;
+      return message;
+    }
 
     function modelSection() {
       const t = T();
@@ -1581,6 +1657,7 @@
         <section><h3>${esc(t.st_models_h)}</h3><div class="st-model-area">${modelSection()}${discoveryState()}</div></section>
         <section><h3>${esc(t.st_agents)}</h3><div class="st-agent-area">${loaded ? agentSection() : ''}</div></section>
         <section><h3>${esc(t.st_providers)}</h3><div class="st-provider-area">${loaded ? providerSection() : ''}</div></section>
+        <section class="st-storage">${storageSection()}</section>
         <section class="st-engine"></section>
         </div>
         <footer class="stp-foot"><p>${esc(t.key_note)}</p><button type="button" class="primary st-close">${esc(t.st_close)}</button></footer></div>`;
@@ -1631,9 +1708,41 @@
       q('.st-model-area').innerHTML = modelSection() + discoveryState();
       q('.st-agent-area').innerHTML = agentSection();
       if (!form) q('.st-provider-area').innerHTML = providerSection();
+      if (!cloudDraft) q('.st-storage').innerHTML = storageSection();
       renderEngine();
       wire();
     };
+    function wireSync() {
+      dlg.querySelectorAll('[data-sync]').forEach((b) => { b.onclick = async () => {
+        b.disabled = true; syncError = '';
+        try { syncState = await api('/api/storage/sync', { action: b.dataset.sync }); }
+        catch (error) { syncError = error.message; }
+        await refreshSync(true);
+      }; });
+      dlg.querySelectorAll('[data-choice]').forEach((b) => { b.onclick = async () => {
+        const box = b.closest('[data-conflict]'), c = conflicts[+box.dataset.conflict];
+        b.disabled = true; syncError = '';
+        const value = { action: 'resolve', document: c.document, conflict: c.id,
+          choice: c.key === 'document-state' ? b.dataset.choice : +b.dataset.choice };
+        if (b.dataset.manual) value.text = box.querySelector('textarea').value;
+        try { await api('/api/storage/sync', value); }
+        catch (error) { syncError = error.message; }
+        await refreshSync(true);
+      }; });
+    }
+    async function refreshSync(force = false) {
+      if (!dlg.isConnected) return;
+      try {
+        syncState = await api('/api/storage/sync');
+        if (force || !syncState || syncState.conflicts !== conflictCount) {
+          conflicts = await api('/api/storage/conflicts'); conflictCount = syncState?.conflicts ?? conflicts.length;
+          document.dispatchEvent(new CustomEvent('tf-conflicts', { detail: conflicts.length }));
+        }
+        const box = q('.st-sync');
+        // Don't replace a conflict form while its retained revisions are being reviewed.
+        if (box && (force || !box.querySelector('details[open]'))) { box.innerHTML = syncSection(); wireSync(); }
+      } catch (error) { syncError = error.message; }
+    }
     async function discover() {
       refreshing = true; refreshError = '';
       q('.st-model-area').innerHTML = modelSection() + discoveryState(); wire();
@@ -1650,6 +1759,48 @@
     }
 
     function wire() {
+      for (const [id, key] of [['st-cloud-url', 'url'], ['st-cloud-user', 'username'], ['st-cloud-password', 'password'], ['st-cache-path', 'cache_path']]) {
+        const input = q('#' + id);
+        if (input) input.oninput = () => { cloudDraft[key] = input.value; cloudTested = false; };
+      }
+      const cloudMode = q('#st-cloud-mode');
+      if (cloudMode) cloudMode.onchange = () => { cloudDraft.enabled = cloudMode.value === 'cloud'; render(); };
+      const storageInput = q('.st-storage-input');
+      if (storageInput) storageInput.oninput = () => { storageDraft = storageInput.value; };
+      for (const [selector, key] of [['.st-storage-pick', 'local'], ['.st-cache-pick', 'cache']]) {
+        const pick = q(selector);
+        if (pick) pick.onclick = async () => {
+          try {
+            const path = await window.desktop.chooseLibraryFolder();
+            if (path) { if (key === 'cache') cloudDraft.cache_path = path; else storageDraft = path; render(); }
+          } catch (error) { storageError = error.message; render(); }
+        };
+      }
+      const saveStorage = async (test = false, cancel = false) => {
+        storageBusy = true; storageError = ''; cloudError = ''; cloudTested = false; render();
+        try {
+          if (test) { await api('/api/storage/cloud/test', cloudDraft); cloudTested = true; }
+          else if (cloudDraft.enabled) {
+            data.cloudStorage = await api('/api/storage/cloud', cloudDraft); cloudDraft.password = '';
+          } else {
+            // Validate switching first: an unsynced cloud workspace must remain selected.
+            if (data.cloudStorage?.enabled) data.cloudStorage = await api('/api/storage/cloud', { enabled: false });
+            const local = data.storage?.local || data.storage;
+            if (cancel || (storageDraft && storageDraft !== (local.pending || local.path))) {
+              data.storage = await api('/api/storage', cancel ? { cancel: true } : { path: storageDraft });
+              const saved = data.storage.local || data.storage;
+              storageDraft = saved.pending || saved.path;
+            }
+          }
+        } catch (error) { storageError = error.message; }
+        storageBusy = false;
+        if (dlg.isConnected) render();
+      };
+      const storageSave = q('.st-storage-save'), storageCancel = q('.st-storage-cancel'), cloudTest = q('.st-cloud-test');
+      if (storageSave) storageSave.onclick = () => saveStorage();
+      if (storageCancel) storageCancel.onclick = () => saveStorage(false, true);
+      if (cloudTest) cloudTest.onclick = () => saveStorage(true);
+      wireSync();
       const retry = q('.st-retry');
       if (retry) retry.onclick = discover;
       dlg.querySelectorAll('.st-close').forEach((b) => { b.onclick = () => dlg.close(); });
@@ -1750,7 +1901,8 @@
       } catch (x) { if (!form) return; form.err = x.message; const e2 = q('.pf-err'); if (e2) e2.textContent = x.message; }
     }
 
-    dlg.addEventListener('close', () => dlg.remove());
+    const syncTimer = setInterval(() => refreshSync(), 3000);
+    dlg.addEventListener('close', () => { clearInterval(syncTimer); dlg.remove(); });
     render();
     dlg.showModal();
     if (window.desktop && window.desktop.checkForUpdates) window.desktop.version().then((v) => {
@@ -1771,6 +1923,46 @@
     discover();
     if (jobs.some((j) => j.kind === 'install' && live(j))) follow();   // an install started on the landing
   }
+
+  const syncBadge = h('button', 'storage-sync-badge');
+  syncBadge.type = 'button'; syncBadge.hidden = true; syncBadge.onclick = () => openSettings();
+  document.body.append(syncBadge);
+  let offlineNotice = false, syncPolling = false, lastLibraryStamp = '', localConflictCount = 0;
+  document.addEventListener('tf-conflicts', (event) => { localConflictCount = event.detail; pollStorage(); });
+  document.addEventListener('tf-save-state', (event) => {
+    if (event.detail.local && !event.detail.online && !offlineNotice) {
+      offlineNotice = true; alert(t().sync_saved_local);
+    }
+    pollStorage();
+  });
+  async function pollStorage() {
+    if (syncPolling || document.hidden) return;
+    syncPolling = true;
+    try {
+      const s = await api('/api/storage/sync');
+      syncBadge.hidden = !s && !localConflictCount;
+      if (!s && localConflictCount) syncBadge.textContent = t().sync_conflicts.replace('{n}', localConflictCount);
+      if (s) {
+        if (s.online) offlineNotice = false;
+        else if (s.pending && !offlineNotice) { offlineNotice = true; alert(t().sync_saved_local); }
+        const T = t();
+        syncBadge.textContent = `${s.syncing ? T.sync_busy : s.online ? T.sync_online : T.sync_offline} · ${T.sync_pending.replace('{n}', s.pending)}${s.conflicts ? ' · ' + T.sync_conflicts.replace('{n}', s.conflicts) : ''}`;
+        syncBadge.classList.toggle('warn', !s.online || !!s.conflicts);
+        const stamp = `${s.lastSync}:${s.pending}`;
+        if (s.lastSync && stamp !== lastLibraryStamp) {
+          lastLibraryStamp = stamp;
+          document.dispatchEvent(new Event('tf-storage-synced'));
+          const [items, groups] = await Promise.all([api('/api/papers'), api('/api/folders')]);
+          papers = items; folders = groups; renderSidebar();
+        }
+      }
+    } catch { /* the local app may be restarting */ }
+    finally { syncPolling = false; }
+  }
+  const resumeStorage = (reason) => { api('/api/storage/sync', { action: 'sync', reason }).catch(() => {}); pollStorage(); };
+  addEventListener('online', () => resumeStorage('online')); addEventListener('focus', () => resumeStorage('focus'));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeStorage('focus'); });
+  setInterval(pollStorage, 10000); pollStorage();
 
   renderSidebar();
   if (landing) refreshModels().then((d) => {

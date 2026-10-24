@@ -46,6 +46,25 @@ def source_of(pid):
     return d / "source.pdf" if (d / "source.pdf").exists() else next(iter(sorted(d.glob("original.*"))), None)
 
 
+def source_name(pid):
+    """Original asset's logical name, without requiring a local document path."""
+    source = store.document(pid).source
+    if source.pdf is not None:
+        return "source.pdf"
+    return "original." + sorted(source.originals)[0] if source.originals else None
+
+
+def original(pid):
+    """The original's format and bytes, independent of backend filenames."""
+    source = store.document(pid).source
+    if source.pdf is not None:
+        return "pdf", source.pdf
+    if source.originals:
+        format = sorted(source.originals)[0]
+        return format, source.originals[format]
+    return None
+
+
 def kept_name(pid, file):
     """The name a converted document's file is kept under, beside it."""
     return "source.pdf" if pid.startswith("pdf-") else "original" + Path(file).suffix.lower()
@@ -392,6 +411,7 @@ def cut_figures(sc, folder, pdf, name=""):
     return {(p, tuple(box)): f"images/{out.name}" for p, box, out in jobs if str(out) in done}
 
 
+@store.in_document
 def store_pdf(pid, folder, sc, name, tier, replace=False):
     """A converted PDF stored as a document (papers/<pid>/), its pictures read from the engine's output folder. The
     file itself is kept as source.pdf, so the reader can show it beside the text (another file, as original.<its
@@ -418,27 +438,12 @@ def store_pdf(pid, folder, sc, name, tier, replace=False):
         meta["source"] = {"kind": "file", "format": ext, "name": name, "tier": engine.tier_for(f"x.{ext}", tier) if ext in engine.PICTURES else "",
                           "engine": producer}
         meta["label"] = f"{engine.FILES.get(ext, ext.upper())} · {name}"
-    keep = d.with_name(d.name + ".keep")   # the reader's notes and the file, on disk while the document is rewritten
-    old = store.parsed(pid) if replace and (d / "source.html").exists() else None
-    if replace and d.exists():
-        shutil.rmtree(keep, ignore_errors=True)
-        keep.mkdir(parents=True)
-        for f in [source_of(pid), d / "notes.json", d / ids.FILE]:
-            if f and f.exists():
-                shutil.copy2(f, keep / f.name)
-        if (d / "source.html").exists():
-            (d / "source.html").unlink()   # so that store_doc writes the document again
-    try:
-        local.store_doc(pid, html, meta, "source.md", text, lambda f: local.Images(f, Path(folder)).resolve, sizes=True, old=old)
-        from . import zotero
-        zotero.apply(pid)   # read from a Zotero item's file: the item's own title, authors and citekey
-        (d / "layout.json").write_text(json.dumps(layout_of(sc), ensure_ascii=False), encoding="utf-8")
-        (d / "structured_content.json").write_text(json.dumps(sc, ensure_ascii=False), encoding="utf-8")
-    finally:
-        if keep.exists():
-            for f in keep.iterdir():
-                shutil.copy2(f, d / f.name)
-            shutil.rmtree(keep)
+    old = store.parsed(pid) if replace and store.readable(pid) else None
+    local.store_doc(pid, html, meta, "markdown", text, lambda f: local.Images(f, Path(folder)).resolve, sizes=True, replace=replace, old=old)
+    from . import zotero
+    zotero.apply(pid)   # read from a Zotero item's file: its own title and citekey
+    (d / "layout.json").write_text(json.dumps(layout_of(sc), ensure_ascii=False), encoding="utf-8")
+    (d / "structured_content.json").write_text(json.dumps(sc, ensure_ascii=False), encoding="utf-8")
     if old is not None:
         from . import notes
         new = store.parsed(pid)
@@ -479,10 +484,9 @@ def place(pid):
     """Each paragraph's place on the file's pages, {unit id: {"page": n, "boxes": [[x0, y0, x1, y1], ...]}}: matched
     in reading order against the engine's blocks, by the words they share."""
     from .tokens import plain
-    f = store.pdir(pid) / "layout.json"
-    if not f.exists():
+    blocks = store.document(pid).processing.layout
+    if blocks is None:
         return {}
-    blocks = json.loads(store.read_text(f))
     words = lambda s: set(re.findall(r"\w+", s.lower()))  # noqa: E731
     bw = [words(b["t"]) for b in blocks]
     doc = store.parsed(pid)
@@ -504,6 +508,7 @@ def place(pid):
     return out
 
 
+@store.in_document
 def relayout(pid):
     """A PDF converted before its layout was kept: the engine runs again (the fast tier: seconds) for the places alone;
     the document stays as it is (the same file and tier give the same text). False when that cannot be done now."""

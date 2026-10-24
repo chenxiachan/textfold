@@ -14,13 +14,15 @@ import base64
 import hashlib
 import json
 import re
-import shutil
+import copy
+import tempfile
 import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from . import ids, markdown, notes, picture, semantic, store
+from .documents import Document, Source
 from .fetch import UA
 from .parse import parse
 
@@ -129,12 +131,10 @@ def import_text(text, name="document.md", base=None):
     """Store a document given as text (base: the folder its relative image paths start from, if known). Returns its id."""
     title, html, meta = _read_md(text, name)
     pid = make_id(title, text)
-    return store_doc(pid, html, {"id": pid, **meta}, "source.md", text, lambda folder: Images(folder, base).resolve, sizes=True)
+    return store_doc(pid, html, {"id": pid, **meta}, "markdown", text, lambda folder: Images(folder, base).resolve, sizes=True)
 
 
-# what a replaced text takes with it to previous/: the text, what was read from it, and the levels made from it
-REPLACED = ("source.md", "source.html", "meta.json", "img", "layers")
-_REPLACING = threading.Lock()   # one replace at a time (the server answers on several threads; a note saved twice)
+_REPLACING = threading.Lock()   # serialize replacements of a document
 
 
 def replace_text(pid, text, name=None, base=None):
@@ -143,63 +143,60 @@ def replace_text(pid, text, name=None, base=None):
     to the old text: they go to previous/ with it (the one replaced last, notes as they were included), and the next
     generation makes them again from the replies kept, so the model is asked only for the sections whose text changed
     (pipeline.py). Returns the new title. LookupError: no such Markdown document."""
+    if not store.valid_id(pid) or not pid.startswith("md-"):
+        raise LookupError(pid)
     with _REPLACING:
         return _replace(pid, text, name, base)
 
 
+def _normalized(html, resolver, sizes=False):
+    """Image downloading needs scratch files; persistence gets resource values."""
+    with tempfile.TemporaryDirectory(prefix="textfold-images-") as temp:
+        folder = Path(temp)
+        html = semantic.normalize(html, resolve_img=resolver(folder), sizes=sizes)
+        images = {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+        return html, images
+
+
 def _replace(pid, text, name, base):
-    d = store.pdir(pid)
-    if not (pid.startswith("md-") and store.valid_id(pid) and (d / "meta.json").exists() and (d / "source.html").exists()):
+    if not store.readable(pid):
         raise LookupError(pid)
-    was = json.loads(store.read_text(d / "meta.json"))
-    title, html, meta = _read_md(text, name or (was.get("source") or {}).get("name") or "document.md")
-    meta = {**was, **meta, "id": pid, "replaced": store.stamp()}
     old = store.parsed(pid)
-    tmp = d.with_name(d.name + ".tmp")
-    shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir(parents=True)
-    try:
-        page, new = ids.freeze(semantic.normalize(html, resolve_img=Images(tmp / "img", base).resolve, sizes=True), meta, old, ids.load(pid))
-        (tmp / "source.html").write_text(page, encoding="utf-8")
-        (tmp / "source.md").write_text(text, encoding="utf-8")
-        (tmp / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-        prev = d / "previous"
-        shutil.rmtree(prev, ignore_errors=True)
-        prev.mkdir()
-        if (d / "notes.json").exists():
-            shutil.copy2(d / "notes.json", prev / "notes.json")
-        for f in REPLACED:   # each moved by a rename: a page opened meanwhile reads a file old or new, never half of one
-            if (d / f).exists():
-                (d / f).rename(prev / f)
-            if (tmp / f).exists():
-                (tmp / f).rename(d / f)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    gone = ids.load(pid)
+    with store.edit(pid) as document:
+        was = document.meta
+        title, html, meta = _read_md(text, name or (was.get("source") or {}).get("name") or "document.md")
+        meta = {**was, **meta, "id": pid, "replaced": store.stamp()}
+        html, images = _normalized(html, lambda folder: Images(folder, base).resolve, sizes=True)
+        html, new = ids.freeze(html, meta, old, gone)
+        previous = Document(pid, meta=copy.deepcopy(was),
+                            source=Source(html=document.source.html, markdown=document.source.markdown),
+                            layers=copy.deepcopy(document.layers), notes=copy.deepcopy(document.notes),
+                            images=dict(document.images), _legacy=dict(document._legacy))
+        document.previous = previous
+        document.meta, document.source.html, document.source.markdown = meta, html, text
+        document.images, document.layers = images, {}
     ids.remember(pid, old, new)
     notes.reanchor(pid, old, new)
     return title
 
 
-def store_doc(pid, html, meta, raw_name, raw, resolver, sizes=False, old=None):
-    """A document's semantic HTML stored as a paper: normalized (with its images, through resolver(img folder)) into
-    papers/<pid>/, written whole or not at all, with its paragraphs' ids (ids.freeze; old: the document it replaces,
-    whose paragraphs still there keep theirs). A paper already stored stays as it is."""
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+def store_doc(pid, html, meta, raw_kind, raw, resolver, sizes=False, replace=False, old=None):
+    """Save a complete normalized document. Backends choose its representation."""
+    if raw_kind not in ("markdown", "xml", "wiki_html"):
+        raise ValueError("Unsupported source kind")
+    if not replace and store.readable(pid):
         return pid
     gone = ids.load(pid) if old is not None else None
-    tmp = d.with_name(d.name + ".tmp")
-    shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir(parents=True)
-    try:
-        page, _ = ids.freeze(semantic.normalize(html, resolve_img=resolver(tmp / "img"), sizes=sizes), meta, old, gone)
-        (tmp / "source.html").write_text(page, encoding="utf-8")
-        (tmp / raw_name).write_text(raw, encoding="utf-8")
-        (tmp / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-        shutil.rmtree(d, ignore_errors=True)
-        tmp.rename(d)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    html, images = _normalized(html, resolver, sizes)
+    html, _ = ids.freeze(html, meta, old, gone)
+    with store.edit(pid, create=True) as document:
+        if not replace and document.meta is not None and document.source.html is not None:
+            return pid
+        document.meta, document.source.html, document.images = meta, html, images
+        setattr(document.source, raw_kind, raw)
+        if replace:
+            document.layers = {}   # these belonged to the previous source text
     return pid
 
 

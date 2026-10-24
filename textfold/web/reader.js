@@ -1851,13 +1851,24 @@
   // and the quote. Highlights are marks on the pieces, so they zoom with the words; where the passage is not on
   // screen at a level, the paragraph carries a mark. Notes with text and questions sit in the margin.
   // The local server keeps them in papers/<id>/notes.json; a static page keeps them in this browser.
-  let notes = [];
+  let notes = [], noteAliases = {};
   const notesOf = new Map();   // uid -> its notes
   let keepMine = store.get('dr-keep-mine') === '1';   // "keep my highlights" (a viewer's preference: kept in this browser)
   const NOTES_KEY = `dr-notes:${D.meta.id}${D.saved ? ':' + D.saved : ''}`;
+  let cloudOffline = false;
   const post = (path, body, signal) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal })
-    .then((r) => r.json().then((d) => (r.ok ? d : Promise.reject(new Error(d.error || r.status)))));
-  const noteId = () => 'n-' + Math.random().toString(36).slice(2, 10);
+    .then(async (r) => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      if (Array.isArray(d.conflicts)) document.dispatchEvent(new CustomEvent('tf-conflicts', { detail: d.conflicts.length }));
+      if (r.headers.has('X-TextFold-Save-State')) {
+        cloudOffline = r.headers.get('X-TextFold-Online') === '0';
+        document.dispatchEvent(new CustomEvent('tf-save-state', { detail: { local: r.headers.get('X-TextFold-Save-State') === 'local', online: !cloudOffline } }));
+      }
+      return d;
+    });
+  const noteId = () => 'n-' + crypto.randomUUID();
+  const noteSaves = new Map(), acknowledged = new Map(), failedNoteFields = new Map();
   // a note's target: a paragraph (its id), a section ("§" and its id: its one-line summary, or its title), or the
   // whole paper ("¶": a conversation from the chat, with no passage)
   const whole = (a) => a.on === 'paper';
@@ -1948,28 +1959,80 @@
   }
   async function loadNotes() {
     try {
-      notes = D.app ? ((await (await fetch(`/api/notes/${D.meta.id}`)).json()).notes || [])
-        : JSON.parse(store.get(NOTES_KEY) || 'null') || D.notes || [];   // (a saved page: the notes it was saved with, until they change here)
+      if (D.app) {
+        const data = await (await fetch(`/api/notes/${D.meta.id}`)).json(); notes = data.notes || []; noteAliases = data.aliases || {};
+        if (data.conflicts?.length) document.dispatchEvent(new CustomEvent('tf-conflicts', { detail: data.conflicts.length }));
+      } else notes = JSON.parse(store.get(NOTES_KEY) || 'null') || D.notes || [];
     } catch { notes = []; }
     indexNotes();
     // nothing to draw: leave the keyframes alone (prepared already, maybe; redrawing would throw them away)
     if (notesOf.size) notesChanged([...notesOf.keys()]); else updateNotesBtn();
     openFromHash();
   }
+  document.addEventListener('tf-storage-synced', async () => {
+    // Leave a draft under the cursor alone. It carries its own base revision and
+    // will be reconciled by the server when saved.
+    if (noteSaves.size || failedNoteFields.size || asking.size || popNote || !chat.hidden) return;
+    try {
+      const response = await fetch(`/api/notes/${D.meta.id}`);
+      if (!response.ok) return;
+      const data = await response.json(), affected = [...notesOf.keys()];
+      notes = data.notes || []; noteAliases = data.aliases || {}; acknowledged.clear();
+      for (const n of notes) acknowledged.set(n.id, n);
+      indexNotes(); notesChanged([...affected, ...notesOf.keys()]);
+    } catch { /* cached reading continues */ }
+  });
   function saveNote(n) {   // shown at once; written in the background (the promise, for whoever must wait for it)
     const before = notes.find((x) => x.id === n.id);
     notes = notes.filter((x) => x.id !== n.id).concat([n]);
     indexNotes();
     notesChanged([keyOf(n.anchor), ...(before ? [keyOf(before.anchor)] : [])]);
     if (!D.app) { store.set(NOTES_KEY, JSON.stringify(notes)); return Promise.resolve(); }
-    return post(`/api/notes/${D.meta.id}`, { op: 'put', note: n });
+    const ignored = new Set(['_base', '_revision', 'messages', 'thread', 'ask', 'branches']);
+    const intent = Object.keys(n).filter((k) => !ignored.has(k) && JSON.stringify(n[k]) !== JSON.stringify(before?.[k]));
+    const task = (noteSaves.get(n.id) || Promise.resolve()).catch(() => {}).then(async () => {
+      const ack = acknowledged.get(n.id);
+      // A rejected write leaves a visible draft. Its fields remain unconfirmed
+      // even when the next input event repeats that exact text.
+      const fields = new Set([...(failedNoteFields.get(n.id) || []), ...intent]);
+      let payload = n;
+      if (ack) {
+        payload = { ...ack, ...Object.fromEntries([...fields].map((k) => [k, n[k]])) };
+        if (n.messages) payload.messages = [...new Map([...(ack.messages || []), ...n.messages].map((m) => [m.id, m])).values()];
+      }
+      let data;
+      try { data = await post(`/api/notes/${D.meta.id}`, { op: 'put', note: payload }); }
+      catch (error) { failedNoteFields.set(n.id, fields); throw error; }
+      failedNoteFields.delete(n.id);
+      const id = data.aliases?.[n.id] || n.id, saved = data.notes.find((x) => x.id === id);
+      if (saved) {
+        acknowledged.set(n.id, saved);
+        if (notes.find((x) => x.id === n.id) === n) {
+          notes = notes.filter((x) => x.id !== n.id).concat([saved]); indexNotes(); notesChanged([keyOf(saved.anchor)]);
+          if (popNote?.id === n.id) popNote = { ...saved, text: popNote.text };
+        }
+      }
+      return saved;
+    });
+    noteSaves.set(n.id, task);
+    task.then(() => { if (noteSaves.get(n.id) === task) noteSaves.delete(n.id); }, (error) => {
+      if (noteSaves.get(n.id) === task) noteSaves.delete(n.id);
+      alert(`${T[ui].sync_save_failed}\n${error.message}`);
+    });
+    return task;
   }
   function deleteNote(n) {
     notes = notes.filter((x) => x.id !== n.id);
     indexNotes();
     notesChanged([keyOf(n.anchor)]);
     if (!D.app) { store.set(NOTES_KEY, JSON.stringify(notes)); return Promise.resolve(); }
-    return post(`/api/notes/${D.meta.id}`, { op: 'delete', id: n.id });
+    const task = (noteSaves.get(n.id) || Promise.resolve()).catch(() => {}).then(async () => {
+      const data = await post(`/api/notes/${D.meta.id}`, { op: 'delete', id: n.id, base: acknowledged.get(n.id)?._base || n._base });
+      failedNoteFields.delete(n.id); acknowledged.delete(n.id);
+      return data;
+    });
+    task.catch((error) => alert(`${T[ui].sync_save_failed}\n${error.message}`));
+    return task;
   }
 
   // ── a selection, as anchors (one per paragraph it touches) ──
@@ -2196,7 +2259,32 @@
   const lineAt = (a) => T[ui].n_line.replace('{level}', T[ui].levels[a.level]);
   const lineGone = (a) => !!a.shown && a.lang === lang && !!U[a.unit] && !shownAt(a);
   // a question note is a conversation about its passage: every turn asked there, and a field to ask the next
-  const turnsOf = (n) => n.thread || (n.ask ? [n.ask] : []);
+  const selectedBranches = new Map();
+  function turnsOf(n) {
+    if (!n.messages) return n.thread || (n.ask ? [n.ask] : []);
+    const by = new Map(n.messages.map((m) => [m.id, m]));
+    const parents = new Set(n.messages.map((m) => m.parent));
+    const heads = n.messages.map((m) => m.id).filter((id) => !parents.has(id)).sort();
+    let id = selectedBranches.get(n.id);
+    if (!by.has(id)) id = heads.at(-1);
+    const path = [], seen = new Set();
+    while (id && by.has(id) && !seen.has(id)) { seen.add(id); const m = by.get(id); path.unshift(m); id = m.parent; }
+    const turns = [];
+    for (const m of path) {
+      if (m.role === 'user') turns.push({ q: m.text, a: '', message_id: m.id, pending: m.pending, error: m.error });
+      else if (turns.length) Object.assign(turns[turns.length - 1], m, { a: m.text, message_id: m.id });
+    }
+    if (!asking.has(n.id)) for (const turn of turns) if (turn.pending) { turn.pending = false; turn.error = T[ui].sync_unanswered; }
+    return turns;
+  }
+  function branchPicker(n) {
+    if (!n?.messages) return '';
+    const parents = new Set(n.messages.map((m) => m.parent));
+    const heads = n.messages.filter((m) => !parents.has(m.id)).sort((a, b) => a.id.localeCompare(b.id));
+    if (heads.length < 2) return '';
+    const chosen = selectedBranches.get(n.id) || heads.at(-1).id;
+    return `<label class="conversation-branches">${esc(T[ui].sync_branch)} <select class="conversation-branch">${heads.map((m, i) => `<option value="${esc(m.id)}"${chosen === m.id ? ' selected' : ''}>${i + 1} · ${esc(String(m.text || n.messages.find((q) => q.id === m.parent)?.text || '').slice(0, 45))}</option>`).join('')}</select></label>`;
+  }
   function openNote(n, draft = false, back = '') {   // back: a question stopped, in the field again to be put right
     if (whole(n.anchor) && n.kind === 'ask') { openChat(n, back); return; }   // a conversation about the whole paper lives in the chat
     const was = popNote && popNote.id === n.id && npop.querySelector('.np-input'), typed = was ? was.value : '';   // (drawn again: what is written stays)
@@ -2205,7 +2293,7 @@
     let body;
     if (ask) {
       const turns = turnsOf(n), waiting = turns.some((x) => x.pending), failed = turns.length && turns[turns.length - 1].error;
-      body = turns.map((x, k) => turnHtml(x, k === turns.length - 1, k, !waiting)).join('') +
+      body = branchPicker(n) + turns.map((x, k) => turnHtml(x, k === turns.length - 1, k, !waiting && !n.messages)).join('') +
         (turns.length && turns[turns.length - 1].model ? `<div class="np-model">${esc(turns[turns.length - 1].model)}</div>` : '') +
         (turns.length ? '' : tryRow(t.n_pstarters)) +
         composer('np-input', turns.some((x) => x.a) ? t.n_more : t.n_ask_ph, back || typed || (failed && !waiting ? turns[turns.length - 1].q : ''), waiting);
@@ -2257,6 +2345,9 @@
     // a note is kept and closed, as with Escape; not on a phone or a tablet, whose keyboard has no Shift+Enter: Enter
     // writes a new line there, and a tap outside keeps the note
     else if (e.target.matches('.np-text') && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); closeNote(); }
+  });
+  npop.addEventListener('change', (e) => {
+    if (e.target.matches('.conversation-branch') && popNote) { selectedBranches.set(popNote.id, e.target.value); openNote(popNote); }
   });
   npop.addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -2330,43 +2421,57 @@
   async function askNote(n, q) {
     if (!D.app) {   // a page made to share has no model behind it: the question stays on screen, with how to ask for real
       const shown = { ...n, kind: 'ask', thread: [...turnsOf(n).filter((x) => x.a || x.demo), { q, demo: true }] };
+      delete shown.messages;
       if (whole(n.anchor)) { chatNote = shown; openChat(shown); } else openNote(shown, true);
       return;
     }
     if (asking.has(n.id)) return;
-    const done = turnsOf(n).filter((x) => x.a), qlang = (turnsOf(n).find((x) => x.lang) || {}).lang || lang;
-    const note = { ...n, kind: 'ask', thread: [...done, { q, a: '', pending: true, lang: qlang }] };
-    delete note.ask;
     const mine = { req: noteId(), ctl: new AbortController(), q, before: notes.find((x) => x.id === n.id) || null };
+    const done = turnsOf(n).filter((x) => x.a), qlang = (done.find((x) => x.lang) || {}).lang || lang;
+    const parent = done.at(-1)?.message_id || null;
+    const nodes = n.messages || [];
+    const note = { ...n, kind: 'ask', messages: [...nodes,
+      { id: mine.req + '-q', parent, role: 'user', text: q, pending: true },
+      { id: mine.req + '-a', parent: mine.req + '-q', role: 'assistant', text: '', pending: true, lang: qlang }] };
+    delete note.ask;
+    selectedBranches.set(n.id, mine.req + '-a');
     asking.set(n.id, mine);
-    try { await saveNote(note); } catch { /* shown already; the answer below will report it */ }
+    try { await saveNote(note); } catch { asking.delete(n.id); return; }
     if (popNote && popNote.id === n.id) openNote(note);
     if (chatNote && chatNote.id === n.id) openChat(note);
     let answered;
-    try { answered = await post('/api/ask', { paper: D.meta.id, id: note.id, question: q, ui: readerLang, req: mine.req }, mine.ctl.signal); }
+    try {
+      if (cloudOffline) throw new Error(T[ui].sync_unanswered);
+      answered = await post('/api/ask', { paper: D.meta.id, id: note.id, question: q, ui: readerLang, req: mine.req, parent }, mine.ctl.signal);
+    }
     catch (err) {
       if (mine.ctl.signal.aborted || err.message === 'stopped') return;   // (stopAsk put it all back)
-      answered = { ...note, thread: [...done, { q, a: '', lang: qlang, error: String(err.message || err).slice(0, 200) }] };
+      answered = { ...note, messages: note.messages.map((m) => m.id.startsWith(mine.req + '-') ? { ...m, pending: false, error: String(err.message || err).slice(0, 200) } : m) };
+      try { answered = await saveNote(answered) || answered; } catch { /* saveNote already reports the failed local write */ }
     } finally { if (asking.get(n.id) === mine) asking.delete(n.id); }
     notes = notes.filter((x) => x.id !== answered.id).concat([answered]);
+    acknowledged.set(answered.id, answered);
     indexNotes();
     notesChanged([keyOf(answered.anchor)]);
     if (popNote && popNote.id === answered.id) openNote(answered);
     if (chatNote && chatNote.id === answered.id) openChat(answered);
   }
 
-  function stopAsk(n) {
+  async function stopAsk(n) {
     const a = asking.get(n.id);
     if (!a) return;
     asking.delete(n.id);
     a.ctl.abort();
-    post('/api/ask/stop', { req: a.req }).catch(() => {});
     const field = whole(n.anchor) ? chat.querySelector('.ch-input') : npop.querySelector('.np-input');
     const back = field && field.value.trim() ? field.value : a.q;
     // the conversation as it was before the question; a first question, stopped, leaves no note (only the field again)
-    const was = a.before && turnsOf(a.before).filter((x) => x.a).length ? { ...a.before, thread: turnsOf(a.before).filter((x) => x.a) } : null;
-    if (was) { delete was.ask; saveNote(was); } else deleteNote(n);
-    const fresh = was || { id: noteId(), kind: 'ask', anchor: n.anchor, text: '', thread: [] };
+    let was;
+    try {
+      const data = await post('/api/ask/stop', { req: a.req, paper: D.meta.id, id: n.id });
+      was = data.notes?.find((x) => x.id === n.id);
+      if (was) { notes = notes.filter((x) => x.id !== n.id).concat([was]); acknowledged.set(n.id, was); indexNotes(); notesChanged([keyOf(n.anchor)]); }
+    } catch (error) { alert(error.message); return; }
+    const fresh = was || { id: noteId(), kind: 'ask', anchor: n.anchor, text: '', messages: [] };
     if (whole(n.anchor)) { chatNote = was; openChat(was, back); } else openNote(fresh, !was, back);
   }
   // a turn out of its conversation (not while a question is under way there): the note without it, or none
@@ -2400,7 +2505,7 @@
     chatNote = n;
     const turns = n ? turnsOf(n) : [], waiting = turns.some((x) => x.pending);
     chat.innerHTML = `<div class="ch-head"><b>${esc(t.n_chat)}</b><button type="button" class="ch-new">${esc(t.n_chat_new)}</button><button type="button" class="ch-x" aria-label="×">×</button></div>` +
-      `<div class="ch-body">${turns.length ? turns.map((x, k) => turnHtml(x, k === turns.length - 1, k, !waiting)).join('')
+      branchPicker(n) + `<div class="ch-body">${turns.length ? turns.map((x, k) => turnHtml(x, k === turns.length - 1, k, !waiting && !n?.messages)).join('')
         : `<div class="ch-hint">${esc(t.n_chat_hint)}</div>` + tryRow(t.n_starters, t.n_try)}</div>` +
       `<div class="ch-foot">${composer('ch-input', turns.some((x) => x.a) ? t.n_more : t.n_chat_ph, draft, waiting)}</div>`;
     texify(chat);
@@ -2412,6 +2517,9 @@
     field.setSelectionRange(field.value.length, field.value.length);
   }
   function closeChat() { chat.hidden = true; chatBtn.classList.remove('on'); if (chat.contains(document.activeElement)) document.activeElement.blur(); }
+  chat.addEventListener('change', (e) => {
+    if (e.target.matches('.conversation-branch') && chatNote) { selectedBranches.set(chatNote.id, e.target.value); openChat(chatNote); }
+  });
   chatBtn.addEventListener('click', () => { if (!chat.hidden) closeChat(); else openChat(chatNote && notes.some((x) => x.id === chatNote.id) ? notes.find((x) => x.id === chatNote.id) : latestChat()); });
   chat.addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -2531,7 +2639,10 @@
     linkMsg._t = setTimeout(() => linkMsg.classList.remove('on'), 6000);
   }
   function openFromHash() {
-    const m = /[#&]n=([\w-]+)/.exec(location.hash), n = m && notes.find((x) => x.id === m[1]);
+    const m = /[#&]n=([\w-]+)/.exec(location.hash);
+    let identity = m?.[1], seen = new Set();
+    while (noteAliases[identity] && !seen.has(identity)) { seen.add(identity); identity = noteAliases[identity]; }
+    const n = notes.find((x) => x.id === identity);
     const arg = (k) => { const x = new RegExp(`[#&]${k}=([^&]+)`).exec(location.hash); return x ? decodeURIComponent(x[1]) : null; };
     let u = n ? n.anchor.unit : arg('u'), s = !n && !u ? arg('s') : null, lost = false;
     if (u && !n && !unitEl.has(u) && unitEl.has(ALIAS[u])) u = ALIAS[u];
@@ -3048,7 +3159,7 @@
     .sort((x, y) => (placeOf(x.anchor) - placeOf(y.anchor)) || (((x.anchor.tokens || [0])[0]) - ((y.anchor.tokens || [0])[0])));
   function notesJson(kinds) {
     const m = D.meta;
-    return { format: 'textfold/notes', version: 1, made_by: `${BRAND} · ${REPO}`, paper: { id: m.id, version: m.version, title: m.title, url: m.abs_url, ...(m.snapshot ? { snapshot: m.snapshot } : {}) }, notes: inOrder(kinds) };
+    return { format: 'textfold/notes', version: 1, made_by: `${BRAND} · ${REPO}`, paper: { id: m.id, version: m.version, title: m.title, url: m.abs_url, ...(m.snapshot ? { snapshot: m.snapshot } : {}) }, notes: inOrder(kinds).map((n) => Object.fromEntries(Object.entries(n).filter(([k]) => !['_base', '_revision'].includes(k)))) };
   }
   // Markdown for Obsidian: a note per paper; each highlight a quote with a block id (^n-…) other notes can link to,
   // each question a callout; every one links back to its place in the reader

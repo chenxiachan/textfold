@@ -10,6 +10,10 @@ window.DR_I18N = (() => {
 
   const S = {
     en: {
+      cloud_unavailable: "The cloud library is unavailable. Open Settings to reconnect or choose local storage.",
+      cloud_title: "Cloud storage", cloud_local: "Local folder", cloud_active: "Cloud active", cloud_mode: "Document storage", cloud_url: "Service URL", cloud_username: "Username", cloud_password: "Password", cloud_kept: "Leave empty to keep the saved password", cloud_test: "Test connection", cloud_restart: "Saved. Restart TextFold to use the selected storage.", cloud_explain: "Connect any service supporting TextFold Storage API v1. Switching takes effect after restart; existing documents stay in their current storage and are not uploaded automatically. Passwords are kept in your system keyring.",
+      storage_absolute: "Enter an absolute folder path.", storage_empty: "Choose an empty folder. Existing files will not be overwritten.", storage_overlap: "Choose a separate folder, outside the current library.",
+      storage_title: "Document library", storage_current: "Current location · local folder", storage_destination: "New library folder", storage_choose: "Choose…", storage_save: "Save for next restart", storage_saving: "Saving…", storage_cancel: "Cancel planned move", storage_pending: "Saved. On restart, copy the library to:", storage_explain: "Choose an empty folder. After TextFold restarts, originals, generated levels, translations, notes and library folders are copied and verified. The original folder is kept. Model settings and the PDF engine stay where they are.",
       st_discovery_failed: "Model discovery could not refresh. Saved choices and previous results are kept.", st_retry: "Retry",
       tut_open: "How it works", sb_resize: "Drag to change the width. Double-click to reset.", sources_tip: "These sources are read with their own structure: sections, formulas, figures and references stay as the author made them.",
       g_web: "Web pages", web_notext: "This page shows little text without running its scripts, or it needs a sign-in, so it cannot be read here.", web_pdf: "This link is a PDF. Download it and drop it here.", web_blocked: "This site did not let TextFold fetch the page (a sign-in, a paywall, or a block on programs).",
@@ -36,6 +40,10 @@ window.DR_I18N = (() => {
       n_asked_at: "asked at {level}", n_keep: "Keep my highlights", n_keep_tip: "When the text zooms out, the passages you highlighted stay", n_more: "Ask a follow-up…", n_highlight: "Highlight", n_note: "Note", n_ask: "Ask", n_ask_ph: "Ask about this passage…", n_note_ph: "Write a note…", n_thinking: "Thinking…", n_copy: "Copy link", n_copied: "Copied", n_delete: "Delete", n_notes: "Notes", n_export_md: "Export Markdown (Obsidian)", n_export_json: "Export notes data (JSON)", n_failed: "No answer", n_open: "Open in the reader", n_local: "Notes are kept in this browser", n_all: "All", n_del_sure: "Click again to delete", n_export_pdf: "Export PDF: notes only", n_none: "Nothing here yet", home: "Home", del_paper: "Delete", del_confirm: "Delete “{title}”?\n\nIts levels, translations and your {n} notes move to papers/.trash, where you can find them again for 30 days.", del_busy: "This is still being generated. Delete it when that is done.", n_whole: "The whole paper", n_chat: "Ask the paper", n_chat_ph: "Ask about the whole paper…", n_chat_new: "New chat", n_chat_hint: "Answers come from the paper, with the paragraphs they rest on.", n_try: "Try asking", n_starters: ["What problem does this paper solve, and what is new?", "What is the main evidence for its central claim?", "How does the method work, step by step?", "What are the limitations, and what is left open?", "How does it compare with earlier work?"], n_pstarters: ["Explain this in simpler words", "What is the evidence for this?", "How does this connect to the main claim?"], n_infer: "inference", n_infer_tip: "Not from the paper: the model’s own inference or general knowledge", n_cite_bad: "This citation names no paragraph of the paper", link_gone: "The paragraph this link names is no longer in the text: here is the section it was in.", link_gone_top: "What this link names is no longer in the text.", n_demo: "This is a static demo page: there is no model here to answer. Run TextFold on your computer, connect a model, and ask any paper.", n_demo_link: "Get TextFold", n_export_pdf_paper: "Export PDF: the paper at {level}, with notes", or_button: "Connect in one click", or_hint: "Authorize once on OpenRouter: a key is made for you and kept on this computer, with no pasting. Free models work right away.", or_minted: "Authorized. Tick the models to use, then save.", or_failed: "OpenRouter authorization did not finish: {error}. Try again, or paste a key.", free: "free", bridge_name: "ChatGPT plan (local bridge)", bridge_hint: "Uses your ChatGPT plan. The bridge (openai-oauth) runs on this computer at 127.0.0.1:10531 and signs in with Codex's login; without one, a browser opens to sign in. Needs Node.js.", bridge_on: "Bridge running · {n} models", bridge_off: "The bridge is not running", bridge_start: "Start the bridge", bridge_starting: "Starting… (a browser may open to sign in to ChatGPT)", bridge_no_node: "Install Node.js first, or run this in a terminal:", bridge_login: "Sign in to ChatGPT in the browser window that opened.", bridge_login_open: "Open the sign-in page", bridge_failed: "The bridge did not start: {error}", copy: "Copy", st_search: "Search models", st_auto: "found here", cn_title: "Connect a model first", cn_sub: "TextFold folds text with a model you already have. Pick one way:", cn_or: "OpenRouter in one click · free models", cn_gpt: "Use my ChatGPT plan", cn_more: "Other ways (an API key, Claude Code…)", cn_looking: "Looking for the models on this computer…", no_model: "No model is connected yet: connect one below.", license: "License", lic_arxiv: "arXiv license: for reading, not for redistribution",
     },
     zh: {
+      cloud_unavailable: "云端文献库暂时无法访问。请打开设置检查连接，或切换回本地存储。",
+      cloud_title: "云端存储", cloud_local: "本地目录", cloud_active: "正在使用云端", cloud_mode: "文献存储方式", cloud_url: "服务入口", cloud_username: "用户名", cloud_password: "密码", cloud_kept: "留空保留已保存的密码", cloud_test: "测试连接", cloud_restart: "已保存，重启 TextFold 后使用所选存储。", cloud_explain: "可连接任何实现 TextFold Storage API v1 的服务。切换在重启后生效；现有文献保留在原存储中，不会自动上传。密码保存在系统 keyring 中。",
+      storage_absolute: "请输入完整的文件夹路径。", storage_empty: "请选择空目录，不会覆盖已有文件。", storage_overlap: "请选择独立目录，不要放在当前文献库内部或它的上级目录。",
+      storage_title: "文献存储", storage_current: "当前位置 · 本地目录", storage_destination: "新的文献库目录", storage_choose: "选择目录…", storage_save: "保存，重启后生效", storage_saving: "正在保存…", storage_cancel: "取消迁移计划", storage_pending: "已保存。重启后将文献库复制到：", storage_explain: "请选择空目录。重启 TextFold 后，将复制并校验原文、生成层级、翻译、笔记和文献分组，原目录保留。模型设置和 PDF 引擎的位置不变。",
       st_discovery_failed: "模型发现刷新失败，已保留配置与上次结果。", st_retry: "重试",
       tut_open: "使用说明", sb_resize: "拖动调整宽度，双击恢复默认", sources_tip: "这些来源有专门的解析：章节、公式、图和参考文献都按原样保留。",
       g_web: "网页", web_notext: "这个网页要运行脚本才显示正文，或者需要登录，所以这里读不了。", web_pdf: "这个链接是 PDF。下载后拖到这里即可。", web_blocked: "这个网站不允许 TextFold 获取页面（需要登录、付费，或拒绝程序访问）。",
@@ -771,6 +779,40 @@ window.DR_I18N = (() => {
     "ru": { n_chat: "Спросить текст", n_chat_ph: "Вопрос по всему тексту…", n_chat_hint: "Ответы берутся из текста, с абзацами, на которые они опираются.", n_whole: "Весь текст", n_infer_tip: "Не из текста: собственный вывод модели или общие знания", n_cite_bad: "Эта ссылка не указывает ни на один абзац текста", n_export_pdf_paper: "Экспорт в PDF: текст на уровне «{level}» с заметками", n_starters: ["О чём это, в нескольких предложениях?", "Каковы главные мысли?", "Просят ли меня что-то сделать или решить?", "Что осталось неясным или не сказано?", "Какая часть важнее всего и почему?"], n_pstarters: ["Объясни это проще", "На чём это основано?", "Как это связано с главной мыслью?"] },
     "hi": { n_chat: "पूरे पाठ से पूछें", n_chat_ph: "पूरे पाठ के बारे में पूछें…", n_chat_hint: "उत्तर पाठ से आते हैं, उन अनुच्छेदों के साथ जिन पर वे टिके हैं।", n_whole: "पूरा पाठ", n_infer_tip: "पाठ में नहीं: मॉडल का अपना अनुमान या सामान्य ज्ञान", n_cite_bad: "यह उद्धरण पाठ के किसी अनुच्छेद की ओर संकेत नहीं करता", n_export_pdf_paper: "PDF निर्यात करें: {level} स्तर पर पाठ, नोट्स के साथ", n_starters: ["यह किस बारे में है, कुछ वाक्यों में?", "इसकी मुख्य बातें क्या हैं?", "क्या यह मुझसे कुछ करने या तय करने को कहता है?", "क्या अस्पष्ट रह गया या कहा नहीं गया?", "कौन-सा हिस्सा सबसे ज़रूरी है, और क्यों?"], n_pstarters: ["इसे आसान शब्दों में समझाइए", "यह किस आधार पर कहा गया है?", "यह मुख्य बात से कैसे जुड़ता है?"] },
   };
+  Object.assign(S.en, {
+    sync_cache: "Local cache folder", sync_cache_default: "Default cache folder",
+    sync_cloud_explain: "The cloud is authoritative. Downloaded documents remain readable and editable offline; local changes wait for reconnection. Passwords stay in the system keyring. Saving takes effect after restart.",
+    sync_online: "Cloud connected", sync_offline: "Offline · using local copy", sync_busy: "Synchronizing…",
+    sync_pending: "{n} items pending", sync_conflicts: "{n} conflicts to review", sync_last: "Last synchronized:",
+    sync_now: "Sync now", sync_import: "Upload local library", sync_download: "Download all for offline use",
+    sync_clear: "Clear clean cache", sync_export: "Export unsynced changes", sync_import_from: "Upload source:",
+    sync_import_safe: "Original folder is kept; duplicate IDs with different originals are skipped.",
+    sync_import_result: "Imported {n} documents; {k} source mismatches skipped.",
+    sync_deleted: "This document was deleted on another device while local changes were pending. Your changes are retained. Restore explicitly or keep it deleted.",
+    sync_restore: "Restore document", sync_keep_deleted: "Keep deleted", sync_choose: "Use revision {n}",
+    sync_manual: "Merge annotation text manually", sync_resolve: "Save merged text", sync_branch: "Conversation branch",
+    sync_annotation: "Annotation", sync_preview: "Preview shortened; full revisions are retained in the recovery export.", sync_revision_hint: "Choose a revision for the conflicting fields. Other merged changes are retained.",
+    sync_saved_local: "Saved only on this device. Connect to the cloud to synchronize your changes.",
+    sync_save_failed: "Could not save your changes. Keep this window open and copy your text before retrying.",
+    sync_unanswered: "Question saved locally. Reconnect and send it again to request an answer; model calls are never replayed automatically."
+  });
+  Object.assign(S.zh, {
+    sync_cache: "本地缓存目录", sync_cache_default: "使用默认缓存目录",
+    sync_cloud_explain: "云端为唯一权威文献库。本地缓存支持离线阅读和修改，联网后同步；密码保存在系统 keyring。保存设置后重启生效。",
+    sync_online: "云端已连接", sync_offline: "离线 · 使用本地副本", sync_busy: "正在同步…",
+    sync_pending: "{n} 项待同步", sync_conflicts: "{n} 处冲突待处理", sync_last: "上次同步：",
+    sync_now: "立即同步", sync_import: "上传本地文献库", sync_download: "下载全部供离线阅读",
+    sync_clear: "清理已同步缓存", sync_export: "导出待同步修改", sync_import_from: "上传来源：",
+    sync_import_safe: "保留原目录；同一 ID 的原文不同则跳过，不覆盖。",
+    sync_import_result: "已导入 {n} 篇；{k} 篇原文不一致，已跳过。",
+    sync_deleted: "这篇文献在其他设备被删除，同时本地仍有修改。修改已保留，请选择恢复文献或保持删除。",
+    sync_restore: "恢复文献", sync_keep_deleted: "保持删除", sync_choose: "使用修订 {n}",
+    sync_manual: "手动合并笔记正文", sync_resolve: "保存合并后的正文", sync_branch: "对话分支",
+    sync_annotation: "笔记 / 高亮", sync_preview: "此处为部分预览，完整修订保留在恢复导出中。", sync_revision_hint: "仅选择冲突字段使用的修订，已合并的其他修改会保留。",
+    sync_saved_local: "修改仅保存在这台设备上。需要联网后才能同步到云端。",
+    sync_save_failed: "保存失败，请保持窗口打开，复制正文后重试。",
+    sync_unanswered: "问题已保存在本地。联网后请重新发送以获取回答；不会自动重新调用模型。"
+  });
   // text: the document is not a paper, and the questions about it say so
   const t = (lang, text) => ({ ...S.en, ...(S[lang] || {}), ...(text ? { ...DOCS.en, ...(DOCS[lang] || {}) } : {}) });
   // the language a visitor most likely reads, among the ones offered: the interface's, or `among` (a text's, by name)

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "textfold-storage",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "durable_objects": {
+    "bindings": [{ "name": "NOTIFICATIONS", "class_name": "LibraryNotifications" }]
+  },
+  "migrations": [{ "tag": "notifications-v1", "new_sqlite_classes": ["LibraryNotifications"] }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "textfold-storage", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "textfold-storage" }
+  ]
+}

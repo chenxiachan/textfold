@@ -1085,3 +1085,5 @@ html.focus footer.zoom, html.focus .chatbtn { transform: translateY(28px); opaci
 html.focus:not(.show-bottom) footer.zoom *, html.focus:not(.show-bottom) .chatbtn { pointer-events: none !important; }
 html.focus.show-bottom footer.zoom, html.focus.show-bottom .chatbtn { transform: none; opacity: 1; }
 @media print { .rpill { display: none !important; } }
+.conversation-branches { display: flex; align-items: center; gap: 8px; padding: 10px; font: 12px var(--sans); color: var(--muted); }
+.conversation-branches select { min-width: 0; max-width: 75%; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); padding: 5px; }

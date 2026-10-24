@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
   openExternal: (url) => ipcRenderer.invoke('open-external', String(url)),
   saveFile: (name, data) => ipcRenderer.invoke('save-file', String(name), String(data)),
+  chooseLibraryFolder: () => ipcRenderer.invoke('storage:choose-folder'),
   version: () => ipcRenderer.invoke('app:version'),
   updateState: () => ipcRenderer.invoke('update:state'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

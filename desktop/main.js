@@ -15,6 +15,12 @@ const path = require('path');
 const links = require('./links');
 
 const WIN = process.platform === 'win32';
+ipcMain.handle('storage:choose-folder', async (e) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+    title: 'TextFold', properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0] || null;
+});
 const PAYLOAD = app.isPackaged ? path.join(process.resourcesPath, 'payload') : path.join(__dirname, 'payload');
 const BUNDLED = WIN ? path.join(PAYLOAD, 'python', 'python.exe') : path.join(PAYLOAD, 'python', 'bin', 'python3');
 const PACKED = fs.existsSync(BUNDLED);

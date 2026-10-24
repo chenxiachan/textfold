@@ -45,32 +45,43 @@ def has_source(pid):
 
 def path(pid):
     """The paper's PDF on disk, fetched now if it is not there yet; None if there is none to fetch."""
-    d = store.pdir(pid)
-    f = d / "source.pdf"
-    if f.exists():
-        return f
-    meta = json.loads(store.read_text(d / "meta.json"))
+    # Compatibility for file-based parsers, inside their document workspace.
+    return store.pdir(pid) / "source.pdf" if read(pid) is not None else None
+
+
+def read(pid):
+    """PDF bytes from any document backend, downloaded once when necessary."""
+    document = store.document(pid)
+    if document.source.pdf is not None:
+        return document.source.pdf
     with _lock:
-        if f.exists():
-            return f
-        for url in candidates(pid, meta):
+        document = store.document(pid)
+        if document.source.pdf is not None:
+            return document.source.pdf
+        for url in candidates(pid, document.meta):
             try:
                 with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90) as r:
                     data = r.read(LIMIT + 1)
             except (urllib.error.URLError, OSError):
                 continue
             if data[:5] == b"%PDF-" and len(data) <= LIMIT:
-                tmp = f.with_suffix(".part")
-                tmp.write_bytes(data)
-                tmp.replace(f)
-                return f
+                with store.edit(pid) as latest:
+                    latest.source.pdf = data
+                return data
     return None
+
+
+def present(pid):
+    try:
+        return store.document(pid).source.pdf is not None
+    except FileNotFoundError:
+        return False
 
 
 def where(pid):
     """Where a reader can open the PDF themselves when the app cannot fetch it (medRxiv refuses programs): its first
     address, else the paper's page."""
-    meta = json.loads(store.read_text(store.pdir(pid) / "meta.json"))
+    meta = store.document(pid).meta
     return next(candidates(pid, meta), None) or meta.get("abs_url") or None
 
 
@@ -78,8 +89,6 @@ def keep(pid, data):
     """The reader's own copy of the paper's PDF, dropped on the pane: kept as its source.pdf. False if it is not one."""
     if data[:5] != b"%PDF-" or len(data) > LIMIT:
         return False
-    f = store.pdir(pid) / "source.pdf"
-    tmp = f.with_suffix(".part")
-    tmp.write_bytes(data)
-    tmp.replace(f)
+    with store.edit(pid) as document:
+        document.source.pdf = data
     return True

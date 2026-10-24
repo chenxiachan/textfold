@@ -31,8 +31,10 @@ STAMP = "data-tf-k"   # (while ids are found: which element is which; never stor
 def load(pid):
     """A document's paragraphs and sections that are gone, by their ids: {"units": {id: {"section", "since"}},
     "sections": {id: {"now", "since"}}}, "now" the section its paragraphs went to (or None)."""
-    f = store.pdir(pid) / FILE
-    data = json.loads(store.read_text(f)) if f.exists() else {}
+    try:
+        data = json.loads(store.text(pid, FILE))
+    except FileNotFoundError:
+        data = {}
     return {"units": data.get("units") or {}, "sections": data.get("sections") or {}}
 
 
@@ -155,11 +157,8 @@ def remember(pid, old, new):
             data["units"].pop(uid, None)
         for sid in here:
             data["sections"].pop(sid, None)
-        f = store.pdir(pid) / FILE
-        if data["units"] or data["sections"] or f.exists():
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"format": FORMAT, "version": VERSION, **data}, indent=1, ensure_ascii=False), encoding="utf-8")
-            tmp.replace(f)
+        if data["units"] or data["sections"] or store.has(pid, FILE):
+            store.put_asset(pid, FILE, json.dumps({"format": FORMAT, "version": VERSION, **data}, indent=1, ensure_ascii=False).encode("utf-8"))
         return data
 
 

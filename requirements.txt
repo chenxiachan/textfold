@@ -12,6 +12,9 @@ lxml_html_clean
 # Word files (and Excel's), read without the PDF engine
 mammoth
 openpyxl
+# cross-platform system credentials for cloud document storage
+keyring>=25.6,<26
+websockets>=15,<16
 # PDFs that have their words in them, read without the PDF engine (a scan still needs it); only where it comes built
 # (elsewhere it would need Rust to install, and the engine reads those PDFs, as before)
 pdf-inspector>=1.25,<2; sys_platform == "darwin" or (sys_platform == "win32" and platform_machine == "AMD64") or (sys_platform == "linux" and (platform_machine == "x86_64" or platform_machine == "aarch64"))
