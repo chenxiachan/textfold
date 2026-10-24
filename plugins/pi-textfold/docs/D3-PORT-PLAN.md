@@ -1,6 +1,7 @@
 # TextFold for Pi — D3 port: detailed implementation plan
 
-**Status: PLAN ONLY — no implementation starts from this file until it is approved.**
+**Status: implemented** (2026-10-19 to 2026-10-21). The branch is rebased onto
+`origin/main` and green there; §13–§15 are the log of each round.
 Revised after a critical audit of the first draft (corrections listed in § 10).
 
 Ports C1 (level persistence + restore), C2 (`--textfold-digits` digit-guard) and the fold-preview
@@ -9,11 +10,10 @@ panel onto **origin/main's refactored** plugin (the maintainer's level-row desig
 lacks. Every pi-API assumption was verified live on pi 1.3.0 before this plan was written
 (§ 3 — including one hypothesis the first draft wrongly claimed as verified, see VH6).
 
-- Working repo: `/tmp/textfold` (branch `pi-textfold`, base is 23 commits behind `origin/main`)
 - Upstream: `origin/main` = `https://github.com/chenxiachan/textfold.git`
-- Installed pi: 1.3.0 at `~/.npm-global/.../pi-coding-agent/dist/bundle/cli.js`, Node 22
-  (`export PATH="$HOME/.local/node22/bin:$PATH"` required by every gate)
-- Durations in § 5 measured 2026-10-19 on this machine
+- The plugin is ported into upstream's own layout (`plugins/pi-textfold/`), not a fork of it
+- Verified on the installed pi 1.3.0, Node 22; pi 1.2.0 is the declared floor
+- Durations in § 5 were measured on one machine on 2026-10-19; read them as orders of magnitude
 
 ---
 
@@ -350,3 +350,89 @@ still blob-equal to `plugins/textfold/hooks/fold.ts`, the Outline fix included.
 in that plugin's own harness, not here.
 
 ---
+
+## 14. Tool rows (2026-10-20)
+
+The fold covered replies and reasoning, not tool rows: they are components, not
+Markdown, so `registerMarkdownTransformer` never saw them. Measured on a
+recorded turn (21 calls, bash/write/edit), the rows came to **623 rendered
+lines**, and a whole session's 983 calls to 19,227 — one bash row is 13 lines
+(call, five preview lines, a hidden-lines marker, the timer), one edit row 36.
+
+`registerToolRenderer` closes the gap without redrawing anything: the built-in
+renderer still draws the row, and a wrapper keeps only the lines the level
+wants.
+
+| Change | Why | Evidence |
+|---|---|---|
+| `extension/tools.ts` (new) | The rule is the fold's: remove, never invent | `toolResultKeep` = 5/5/2/0/0 for Full…Gist; `foldToolLines` drops padding and names what it hid | 8 unit tests |
+| Wrapped result renderer (`extension/index.ts`) | Pi hands the resolver the built-in renderers, including for tools it does not own | A live replay logged 13 resolvers: bash/read/edit, each `call=true result=true`, `edit` shell=self |
+| The level is read when the row draws | A plain `requestRender` does **not** re-render a row: Alt+3/4/5 produced 0 renderer calls. `invalidate()` produced 26 | The level-change path already invalidates the screen, so no new redraw path was needed |
+| An expanded row is never folded | Pi's expand key is the reader naming one row in full | wiring test |
+| The built-in renderer gets its own component back | `bash.js` clears and re-fills `lastComponent`; handing it the wrapper would nest a wrapper per redraw | the wrapper keeps the inner component in `context.state`; wiring test asserts `seen[1]` is the inner, not the wrapper |
+
+Verified on a replayed session (no model call, `small.jsonl` + tmux), with the
+extension loaded:
+
+```
+Full/Brief  $ printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n'
+            ... (4 earlier lines, ctrl+o to expand)   five six seven eight nine   Took 0.0s
+Points      $ printf '…'   ... (4 earlier lines, …)   five   … (5 more lines · Alt+1)
+Outline     $ printf '…'                                  (no result body)
+Gist        $ printf '…'                                  (no result body)
+```
+
+Gates: **101 tests**, `tsc --noEmit` clean, preflight **11 APIs** (it now checks
+`registerToolRenderer` and `ToolRenderContext`), replay at 1/3/4/5 as above.
+Rows keep a four-line floor at Outline/Gist, and none of it is the fold's: Pi
+adds a `Spacer(1)` above every tool row, the row's `Box` has `paddingY = 1`
+(top and bottom), and the call line is the fourth. Only `renderShell: "self"`
+avoids the box (two lines fewer), but the shell is fixed when the row is built,
+so every row would lose Pi's box at Full as well — not worth it. The fold only
+removes the result lines it can (`toolResultKeep` 0), and the box stays.
+
+---
+
+## 15. The live run, and the rebase (2026-10-21)
+
+The replay above proves the rule against real Pi components but feeds them a
+recorded turn. A live session closes that last gap: the extension installed the
+way a user installs it (`~/.pi/agent/settings.json` → `packages`), a real model
+turn that called `bash seq 1 40`, `ls -R .` and `read notes.txt`, then the keys.
+
+```
+Full    $ seq 1 40
+        ... (35 earlier lines, ctrl+o to expand)   36 37 38 39 40   Took 0.0s
+Points  $ seq 1 40   ... (35 earlier lines, …)   36   … (5 more lines · Alt+1)
+Outline $ seq 1 40                                       (no result body)
+Gist    $ seq 1 40                                       (no result body)
+```
+
+The tap from that session, on the installed extension:
+
+```
+tool rows folded by the level
+tool bash level=3 lines=3/5
+tool bash level=3 lines=3/9
+tool bash level=4 lines=0/9
+tool bash level=5 lines=0/9
+```
+
+Pi's own expand key (`ctrl+o`) still showed the whole row at Gist, and Alt+1
+brought every result back. A second `ctrl+o` folds the row again — proven in a
+separate session at Outline with `seq 1 9`: the row went from the call line only
+to `1 … 9` + `Took 0.0s` and back, Pi's status line saying `Tool output:
+expanded` then `collapsed`. (The first attempt at this looked like a failure
+because it ran at Full, where there is nothing to expand, and because the
+startup-help header shares the key: test the toggle at a level that folds.)
+
+One harness fact worth keeping: `albert-deepseek-v4-flash` answered the tool
+prompt with empty text and no tool call through the local router, so a
+live tool-row run needs a tool-calling model.
+
+**Rebase.** `origin/main` had moved 38 commits (to `cdad27c`) while this branch
+sat on `5a5de9d`, so the five commits were replayed onto the new head. It applied
+without a conflict; the suite on top of `cdad27c` is **103 tests** (upstream added
+two), `tsc --noEmit` clean, preflight 11 APIs. Nothing outside
+`plugins/pi-textfold/` changes in this round: the engine updates and the
+six-line Outline fallback were merged into main before the rebase.
