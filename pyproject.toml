@@ -36,6 +36,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cloud = ["keyring>=25.6,<26", "websockets>=15,<16"]
 # only for the Anthropic API (Claude Code, Codex, Pi and OpenAI-compatible providers need nothing more)
 anthropic = ["anthropic"]
 

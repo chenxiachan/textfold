@@ -6,6 +6,8 @@ pictures in images/), so that pdfdoc stores them as it stores the engine's.
 
 When the engine is installed, these files go to it instead (it reads slides with formulas, OpenDocument and old Office
 files more completely); this is the reader for everyone else, and for a file the engine cannot read."""
+from . import store
+
 import copy
 import csv
 import email
@@ -828,6 +830,7 @@ def _textutil(path, doc):
     Flow(doc, lambda src: None).walk(body_el if body_el is not None else root)
 
 
+@store.in_document
 def save(pid, file, name):
     """A file read by TextFold itself and stored as a document (pdfdoc.store_pdf, as the engine's are), the file kept
     beside it. ValueError("bad-file") when it cannot be read."""

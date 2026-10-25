@@ -107,8 +107,7 @@ def _has_body(xml):
 def fetch(pid, progress=None):
     """Store a preprint from bioRxiv or medRxiv (once). Its id: biorxiv-… or medrxiv-…. progress(stage, done, total)
     follows the images."""
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+    if store.readable(pid):
         return pid
     server, suffix = pid.split("-", 1)
     found = None
@@ -144,4 +143,4 @@ def fetch(pid, progress=None):
             "source": {"kind": server, "name": rec["doi"]}, "label": f"{name} {rec['doi']}v{rec.get('version', '')}"}
     content = re.sub(r"\.source\.xml$", "", final)
     total = len(set(re.findall(r'<img src="([^"]+)"', html)))
-    return local.store_doc(pid, html, meta, "source.xml", xml, lambda folder: image_resolver(content, folder, progress, total))
+    return local.store_doc(pid, html, meta, "xml", xml, lambda folder: image_resolver(content, folder, progress, total))

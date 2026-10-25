@@ -70,8 +70,7 @@ def fetch(pid, eid=None, about=None):
     """Store a paper from Europe PMC (once). Its id: pmc… or ppr…. eid: the Europe PMC id to read when the paper is
     stored under an id of another source (a medRxiv preprint whose site turned the reader away); about: meta fields
     that source gives (its link, its name)."""
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+    if store.readable(pid):
         return pid
     eid = eid or pid
     try:
@@ -85,4 +84,4 @@ def fetch(pid, eid=None, about=None):
     meta = {"id": pid, "version": "", "title": m["title"] or eid.upper(), "authors": m["authors"], "date": m["date"],
             "abs_url": f"https://europepmc.org/article/{kind}/{eid.upper()}", "html_url": "", "license": m["license"],
             "doi": m["doi"], "source": {"kind": "europepmc", "name": eid.upper()}, "label": eid.upper(), **(about or {})}
-    return local.store_doc(pid, html, meta, "source.xml", xml, lambda folder: image_resolver(eid, folder))
+    return local.store_doc(pid, html, meta, "xml", xml, lambda folder: image_resolver(eid, folder))

@@ -149,3 +149,26 @@ A paragraph or section still there, edited, moved or renamed, keeps its id (`ids
 - Finding a passage again by its quote in a regenerated summary (a note on a section's summary), or in a new arXiv
   version: the quote is stored for it.
 - Handwriting. When it comes it will be a body of its own (strokes) on the same anchors.
+
+## Conversation graphs and retained revisions
+
+New notes can include `messages: [{id, parent, role, text, ...}]` and `branches`
+(leaf message IDs). `thread` remains the canonical, editable conversation for
+interoperability with older clients. New or edited thread-only turns are
+incorporated into the graph deterministically; existing sidecar branches remain
+in JSON/document exports. The optional `thread_head` selects its canonical
+branch (null for an empty thread) without erasing archived sibling branches.
+Local-only readers retain the established linear editing and turn-deletion UI.
+Confirmed messages are immutable; concurrent replies preserve separate children.
+
+For a legacy non-English ladder, `legacy_language: {code, messages: [id, ...]}`
+on an annotation corrects the displayed language of the listed old answer IDs.
+The original message bytes and IDs remain unchanged. The notes root's optional
+`base_language_settled` records this one-time migration before the first English
+translation; later English answers retain their own language.
+
+The root can contain `conflicts` and `aliases`. A conflict keeps its merge base,
+two revisions, target record key and deletion intent until explicitly resolved.
+Aliases map duplicate equivalent-highlight IDs to the retained canonical ID.
+Browser responses also provide `_base`/`_revision` edit tokens on notes; these
+are transient and are not part of the persisted/exported notes format.

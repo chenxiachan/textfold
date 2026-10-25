@@ -99,6 +99,7 @@ def cut(file, want, folder):
     return got
 
 
+@store.in_document
 def from_pdf(pid):
     """The reader's button: the paper's figures with words in a drawing cut from its PDF (fetched now if it is not
     kept yet). How many it gave; LookupError when there is no PDF to be had."""
@@ -117,6 +118,7 @@ def from_pdf(pid):
     return sum(1 for n in figs if kept.get(n))
 
 
+@store.in_document
 def back(pid):
     """The other button: the paper's figures as the HTML has them again, and offered again. The PDF stays (the
     side-by-side view reads it)."""

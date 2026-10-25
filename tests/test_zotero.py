@@ -277,8 +277,9 @@ class ReadTest(Setup):
         self.assertFalse(zotero.apply("2201.11903"))   # a paper read online keeps its own record
 
     def test_each_documents_citekey(self):
-        f = self.tmp / "zotero-citekeys.json"
-        with mock.patch.object(zotero, "_links_file", return_value=f):
+        from textfold.storage import LocalDirectoryBackend
+        f = self.tmp / "citekeys-library" / "zotero.json"
+        with store.use_backend(LocalDirectoryBackend(f.parent)):
             self.assertEqual(zotero.citekeys(), {})   # (nothing read from Zotero yet)
             zotero.link("users/0", "ARXVKEY2", "2201.11903", "Chain of thought", {"citekey": "wei2022"})
             zotero.link("users/0", "HTMLKEY2", "doc-0123456789abcdef", "A saved page", {"citekey": ""})   # an item without one

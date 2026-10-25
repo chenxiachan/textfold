@@ -67,8 +67,7 @@ def _rebase(html, raw, blob, folder):
 
 def fetch(pid, progress=None):
     """Store a repository's README (once)."""
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+    if store.readable(pid):
         return pid
     owner, repo = ID.fullmatch(pid).groups()
     info = _api(f"/repos/{owner}/{repo}")   # its name as written, default branch, license, owner
@@ -88,4 +87,4 @@ def fetch(pid, progress=None):
             "license": f"https://spdx.org/licenses/{spdx}.html" if spdx and spdx != "NOASSERTION" else "",
             "source": {"kind": "github", "name": full, "branch": branch}, "label": f"GitHub · {full}"}
     pre = local.prefetch(re.findall(r'<img[^>]*\ssrc="([^"]+)"', html))   # its pictures, at once
-    return local.store_doc(pid, html, meta, "source.md", text, lambda folder: local.Images(folder, None, pre=pre).resolve, sizes=True)
+    return local.store_doc(pid, html, meta, "markdown", text, lambda folder: local.Images(folder, None, pre=pre).resolve, sizes=True)

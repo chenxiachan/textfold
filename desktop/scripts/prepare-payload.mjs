@@ -58,7 +58,7 @@ const run = (args, opts) => execFileSync(platform === 'darwin' && arch !== proce
 
 // The Anthropic API's SDK too: pip leaves it to those who want it (requirements.txt), but a person who picks the
 // Anthropic API in the app's Settings has no pip to install it with (#14)
-const APP_ONLY = ['anthropic>=1.15,<2'];
+const APP_ONLY = ['anthropic>=1.15,<2', 'keyring>=25.6,<26', 'websockets>=15,<16'];
 
 console.log('installing TextFold\'s packages…');
 run(['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '--no-warn-script-location',

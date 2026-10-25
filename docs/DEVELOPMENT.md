@@ -2,6 +2,17 @@
 
 How the reader works, how to run and extend it. For what it is and how to use it, see the [README](../README.md).
 The notes format is [notes-format.md](notes-format.md).
+The document backend interface and the Settings library-location change are described in [storage.md](storage.md).
+The generic cloud storage protocol is in [storage-api.md](storage-api.md), with
+[D1/R2 deployment and integration tests](../cloudflare/storage/README.md).
+Reader save-queue regressions run with `node --test tests/reader-note-saves.test.cjs`;
+they execute the actual reader queue with disposable state and simulated HTTP failures.
+Cloud change hints and coalesced scheduling live in `change_notifications.py`
+and `sync_schedule.py`; `offline_storage.py` alone owns reconciliation and durable
+cursor progress. Run `python -m unittest discover -s tests -p test_storage_notifications.py`
+for protocol, scheduling and idle request-count tests. `npm test` in
+`cloudflare/storage` adds real workerd/WebSocket, DO hibernation and Python
+cross-device tests using disposable D1/R2 and cache directories.
 
 The same semantic zoom as ThoughtDAG's plaques, applied to a paper's HTML (LaTeXML) version:
 

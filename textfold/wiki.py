@@ -181,8 +181,7 @@ def to_html(parsoid):
 
 def fetch(pid, progress=None):
     """Store a Wikipedia article (once). Its id: wiki-<language>-<page id>."""
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+    if store.readable(pid):
         return pid
     lang, pageid = re.fullmatch(r"wiki-([a-z][a-z-]*)-(\d+)", pid).groups()
     pageid, title, rev, _ = lookup(lang, pageid=int(pageid))
@@ -196,4 +195,4 @@ def fetch(pid, progress=None):
             "html_url": "", "license": "https://creativecommons.org/licenses/by-sa/4.0/",
             "source": {"kind": "wikipedia", "name": title, "revision": rev}, "label": f"{lang}.wikipedia.org"}
     html = to_html(parsoid)
-    return local.store_doc(pid, html, meta, "source.wiki.html", parsoid, lambda folder: local.Images(folder, None).resolve)
+    return local.store_doc(pid, html, meta, "wiki_html", parsoid, lambda folder: local.Images(folder, None).resolve)

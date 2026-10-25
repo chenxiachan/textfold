@@ -135,10 +135,11 @@
 .sb-dragimg { position: fixed; top: -200px; left: 0; padding: 6px 11px; border-radius: 8px; font: 600 13px var(--sans); color: var(--ink);
   background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
 .sb-foot { border-top: 1px solid var(--line-2); padding: 10px 12px 14px; }
-.sb-settings, .sb-help, .sb-zotero { width: 100%; text-align: left; border: 0; background: none; font: 550 13px var(--sans); color: var(--ink-2); padding: 6px 4px; border-radius: 7px; cursor: pointer; }
-.sb-settings:hover, .sb-help:hover, .sb-zotero:hover { background: var(--surface); }
-.sb-zotero { display: flex; align-items: center; gap: 6px; }
-.sb-zotero svg { width: 15px; height: 15px; flex: none; }
+.sb-settings, .sb-help, .sb-zotero, .sb-trash { width: 100%; text-align: left; border: 0; background: none; font: 550 13px var(--sans); color: var(--ink-2); padding: 6px 4px; border-radius: 7px; cursor: pointer; }
+.sb-settings:hover, .sb-help:hover, .sb-zotero:hover, .sb-trash:hover { background: var(--surface); }
+.sb-zotero, .sb-trash { display: flex; align-items: center; gap: 6px; }
+.sb-zotero svg, .sb-trash svg { width: 15px; height: 15px; flex: none; }
+.sb-trash svg, .rail-trash svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 /* its edge, dragged to change its width */
 .sb-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; z-index: 1; }
 .sb-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--accent); opacity: 0; transition: opacity .15s; }
@@ -304,6 +305,19 @@ dialog.settings { border: 1px solid var(--line); border-radius: 16px; padding: 0
 dialog.settings::backdrop { background: rgba(30, 25, 15, .28); }
 .st { padding: 22px 24px 20px; font-family: var(--sans); }
 .st h2 { margin: 0 0 14px; font-size: 18px; }
+.trash-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.trash-heading h2 { margin: 0; }
+.trash-close { border: 0; background: none; color: var(--muted); font-size: 25px; cursor: pointer; }
+.trash-list { margin-top: 20px; }
+.trash-row { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+.trash-document { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.trash-document b { font-size: 14px; overflow-wrap: anywhere; }
+.trash-document span, .trash-empty { font-size: 12px; color: var(--muted); }
+.trash-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.trash-actions button, .trash-list > button { font: 13px var(--sans); padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); cursor: pointer; }
+dialog.trash-dialog .trash-delete { color: var(--r-gap); }
+.trash-actions button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 520px) { .trash-row { align-items: flex-start; flex-direction: column; gap: 10px; } }
 .st-opt { display: flex; gap: 10px; align-items: center; padding: 8px 0; font-weight: 550; font-size: 14.5px; cursor: pointer; }
 .st-sub { display: grid; gap: 10px; padding: 4px 0 10px 26px; }
 .st-sub label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
@@ -392,6 +406,17 @@ dialog.settings::backdrop { background: rgba(30, 25, 15, .28); }
 .st-form { display: grid; gap: 10px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .st-form > label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
 .st-form input, .st-form select { background-color: var(--surface) !important; }
+.st-storage-current { display: grid; gap: 6px; margin: 8px 0; }
+.st-storage-current code, .st-storage .st-note code { overflow-wrap: anywhere; font-size: 12px; }
+.st-storage-path { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.st-storage-path input { flex: 1; min-width: 0; width: 100%; }
+.st-storage-path button { flex-shrink: 0; }
+.st-cloud-panel > summary { cursor: pointer; font-weight: 650; font-size: 13px; padding: 10px 0; }
+.st-cloud-panel > summary .st-meta { margin-left: 12px; font-weight: 400; }
+.st-cloud-credentials { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.st-cloud-credentials label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); min-width: 0; }
+.st-cloud-form input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 480px) { .st-cloud-credentials { grid-template-columns: 1fr; } }
 .pf-err { font-size: 12.5px; color: var(--r-limitation); }
 .st-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; max-height: 220px; overflow-y: auto; font-size: 13px; }
 .st-pick .st-label { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-bottom: 2px; }
@@ -534,3 +559,18 @@ dialog.settings.zlib { width: min(980px, calc(100vw - 32px)); }
 .st .zl-go.primary { border: 0; color: var(--on-btn); background: var(--btn); }
 .zl-no { flex: none; font-size: 12px; color: var(--faint); }
 @media (max-width: 720px) { .zl-body { grid-template-columns: 1fr; height: auto; } .zl-tree { max-height: 30vh; } .zl-items { max-height: 50vh; } }
+
+.st-sync { margin-top: 18px; }
+.st-sync-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
+.st-sync-status span { color: var(--muted); }
+.st-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.st-sync code { overflow-wrap: anywhere; }
+.st-conflict { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.st-conflict summary { cursor: pointer; font-size: 13px; overflow-wrap: anywhere; }
+.st-conflict-variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.st-conflict pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 230px; overflow: auto; font: 12px/1.5 var(--mono); }
+.st-conflict textarea { box-sizing: border-box; width: 100%; margin: 8px 0; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.storage-sync-badge { position: fixed; left: 18px; bottom: 14px; z-index: 35; max-width: calc(100vw - 100px); padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--paper); font: 12px/1.4 var(--sans); cursor: pointer; box-shadow: 0 2px 10px #0001; }
+.storage-sync-badge.warn { color: var(--accent); }
+.storage-sync-badge[hidden] { display: none; }
+@media (max-width: 600px) { .st-conflict-variants { grid-template-columns: 1fr; } }

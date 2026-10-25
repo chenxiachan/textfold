@@ -13,19 +13,19 @@ The layers are what makes a paper read the same every time it is opened: a reade
 from them without any model call, and "regenerate" replaces one layer with a new version.
 A translation whose base has since been regenerated is reported as stale.
 """
+import json
 import contextlib
 import functools
-import json
 import locale
 import os
 import re
 import sys
 import time
 from pathlib import Path
+from .storage import DocumentStore, LocalDirectoryBackend
+from ._storage_layout import decode_text, DirectoryFiles
 
 from . import ladder, langs
-from ._storage_layout import DirectoryFiles
-from .storage import DocumentStore, LocalDirectoryBackend
 
 
 def codepage():
@@ -77,6 +77,7 @@ def app_data():
 # pip, or the folder TEXTFOLD_DATA names (the desktop app's; PAPERFOLD_DATA, its name before TextFold, is still read)
 DATA = Path(os.environ.get("TEXTFOLD_DATA") or os.environ.get("PAPERFOLD_DATA") or (ROOT if SOURCE else app_data()))
 HOME = Path.home() / ".textfold"   # the reader's settings and keys, outside the project folder
+_DEFAULT_DATA = DATA
 # where they were kept under earlier names, newest first: PaperFold, Dynamic Reader (read, never removed)
 OLD_HOMES = (Path.home() / ".paperfold", Path.home() / ".dynamic-reader")
 
@@ -137,34 +138,35 @@ def resolve(ref):
     return paper_id(ref)
 
 
+def pdir(pid):
+    return repository().local_path(pid)
+
+
 _repository = None
 _repository_default = None
 
 
 def repository():
-    """Whole-document storage; default libraries keep their existing location."""
+    """Default library, selected independently of logs, uploads and the engine."""
     global _repository, _repository_default
-    default = Path(DATA)
+    default = (Path(DATA), Path(HOME))
     if _repository is None or (_repository_default is not None and _repository_default != default):
         from .storage_settings import active_path
-        _repository = DocumentStore(LocalDirectoryBackend(active_path(default, default)))
+        # Embedders and existing tests that explicitly replace DATA get an
+        # isolated library, never a persisted selection from the user's home.
+        root = active_path(DATA, DATA) if Path(DATA) == Path(_DEFAULT_DATA) else DATA
+        from .cloud_settings import configured
+        cloud = configured(HOME, DATA) if Path(DATA) == Path(_DEFAULT_DATA) else None
+        _repository = DocumentStore(cloud or LocalDirectoryBackend(root))
         _repository_default = default
     return _repository
 
 
-def _custom():
-    return _repository is not None and _repository_default is None
-
-
-def _nonlocal():
-    return _custom() and not isinstance(_repository.backend, LocalDirectoryBackend)
-
-
 @contextlib.contextmanager
 def use_backend(backend):
-    """Choose a backend explicitly, without changing persisted user settings."""
+    """Install a backend explicitly (embedding and backend contract tests)."""
     global _repository, _repository_default
-    previous = _repository, _repository_default
+    previous = (_repository, _repository_default)
     _repository, _repository_default = DocumentStore(backend), None
     try:
         yield _repository
@@ -173,16 +175,17 @@ def use_backend(backend):
 
 
 def in_document(fn):
-    """Private bridge for parsers that require a working directory."""
+    """A file-based parser borrows one scoped working copy; nested calls join it."""
     @functools.wraps(fn)
     def wrapped(pid, *args, **kw):
-        identity = pid['meta']['id'] if isinstance(pid, dict) else pid
+        identity = pid["meta"]["id"] if isinstance(pid, dict) else pid
         with repository().workspace(identity):
             return fn(pid, *args, **kw)
     return wrapped
 
 
 def document(pid):
+    """One complete persisted document, independent of its backend layout."""
     return repository().get(pid)
 
 
@@ -190,56 +193,105 @@ def edit(pid, create=False):
     return repository().edit(pid, create=create)
 
 
-def asset(pid, name):
-    if not _nonlocal():
-        return DirectoryFiles(pdir(pid)).read(name)
-    return repository().read_asset(pid, name)
+def is_local():
+    return isinstance(repository().backend, LocalDirectoryBackend)
 
 
-def text(pid, name):
-    if not _nonlocal():
-        return read_text(DirectoryFiles(pdir(pid)).path(name))
-    from ._storage_layout import decode_text
-    return decode_text(asset(pid, name))
 
 
-def put_asset(pid, name, value):
-    repository().write_asset(pid, name, value)
-
-
-def has(pid, name='meta.json'):
-    return repository().has(pid, name) if _nonlocal() else DirectoryFiles(pdir(pid)).exists(name)
-
-
-def readable(pid):
-    return repository().info(pid).readable if _nonlocal() else has(pid, 'meta.json') and has(pid, 'source.html')
 
 
 def library_root():
     return repository().backend.root
 
 
+def has(pid, name="meta.json"):
+    if is_local():
+        return DirectoryFiles(pdir(pid)).exists(name)
+    if name == "meta.json":
+        try:
+            repository().info(pid)
+            return True
+        except FileNotFoundError:
+            return False
+    # Compatibility for file-based integrations.
+    return repository().has(pid, name)
+
+
+def readable(pid):
+    if is_local():
+        return has(pid, 'meta.json') and has(pid, 'source.html')
+    try:
+        return repository().info(pid).readable
+    except FileNotFoundError:
+        return False
+
+
+def keep_original(pid, format, data, only_if_missing=False):
+    with edit(pid) as doc:
+        if format == "pdf":
+            if not only_if_missing or doc.source.pdf is None:
+                doc.source.pdf = data
+        elif not only_if_missing or format not in doc.source.originals:
+            doc.source.originals[format] = data
+
+
+def asset(pid, name):
+    if is_local():
+        return DirectoryFiles(pdir(pid)).read(name)
+    return repository().read_asset(pid, name)
+
+
+def put_asset(pid, name, data):
+    repository().write_asset(pid, name, data)
+
+
+def text(pid, name):
+    if is_local():
+        return read_text(DirectoryFiles(pdir(pid)).path(name))
+    return decode_text(asset(pid, name))
+
+
 def storage_status():
-    from .storage_settings import status
-    return status(library_root(), DATA)
+    from . import storage_settings
+    backend = repository().backend
+    if not isinstance(backend, LocalDirectoryBackend):
+        local = storage_settings.status(storage_settings.active_path(DATA, DATA), DATA)
+        return {"backend": getattr(backend, "name", "custom"), "path": "", "pending": "", "error": "", "local": local}
+    return storage_settings.status(backend.root, DATA)
 
 
 def schedule_storage(path=None, cancel=False, mode="copy"):
-    from .storage_settings import schedule
-    return schedule(library_root(), DATA, path, cancel, mode)
+    from . import storage_settings
+    backend = repository().backend
+    if not isinstance(backend, LocalDirectoryBackend):
+        from .offline_storage import OfflineBackend
+        if not isinstance(backend, OfflineBackend):
+            raise ValueError("The selected backend does not expose a local folder setting")
+        storage_settings.schedule(storage_settings.active_path(DATA, DATA), DATA, path, cancel, mode)
+        return storage_status()
+    return storage_settings.schedule(backend.root, DATA, path, cancel, mode)
 
 
 def initialize_storage(log=None):
+    """Called before a server accepts work; never relocates a live library."""
     global _repository, _repository_default
-    from .storage_settings import activate
-    _repository = DocumentStore(LocalDirectoryBackend(activate(DATA, DATA, log)))
-    _repository_default = Path(DATA)
+    if _repository is not None and _repository_default is None:
+        return   # an embedding explicitly installed a backend
+    from .cloud_settings import configured
+    cloud = configured(HOME, DATA) if Path(DATA) == Path(_DEFAULT_DATA) else None
+    from . import storage_settings
+    # Cloud selection must not activate a scheduled local-folder migration.
+    root = None if cloud else storage_settings.activate(DATA, DATA, log)
+    _repository = DocumentStore(cloud or LocalDirectoryBackend(root))
+    _repository_default = (Path(DATA), Path(HOME))
 
 
-def pdir(pid):
-    if _custom():
-        return repository().local_path(pid)
-    return library_root() / "papers" / pid
+def discard_document(pid):
+    try:
+        repository().delete(pid)
+    except FileNotFoundError:
+        pass
 
 
 def _file(pid, name):
@@ -247,23 +299,25 @@ def _file(pid, name):
 
 
 def read(pid, name):
-    if _nonlocal():
-        try: return document(pid).layers.get(name)
-        except FileNotFoundError: return None
-    f = _file(pid, name)
-    return json.loads(read_text(f)) if f.exists() else None
+    if is_local() or repository().in_workspace(pid):
+        f = _file(pid, name)
+        return json.loads(read_text(f)) if f.exists() else None
+    try:
+        return document(pid).layers.get(name)
+    except FileNotFoundError:
+        return None
 
 
 def write(pid, name, data):
-    if _nonlocal():
-        with edit(pid, create=True) as saved:
-            saved.layers[name] = data
+    if is_local() or repository().in_workspace(pid):
+        f = _file(pid, name)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(f)
         return
-    f = _file(pid, name)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(f)
+    with edit(pid) as doc:
+        doc.layers[name] = data
 
 
 def stamp():
@@ -280,7 +334,7 @@ def text_lang(pid, en=None):
     formulas, code and the references (langs.detect). en: the ladder, when it is read already."""
     if en and en.get("lang") in langs.LANGS:
         return en["lang"]
-    if _nonlocal():
+    if not is_local() and not repository().in_workspace(pid):
         en = read(pid, "en") if en is None else en
         if en and en.get("lang") in langs.LANGS:
             return en["lang"]
@@ -343,25 +397,35 @@ def apply_tr(doc, lang, tr):
 
 
 def languages(pid):
-    if _nonlocal():
-        return sorted(k[3:] for k in document(pid).layers if k.startswith('tr-'))
-    d = pdir(pid) / "layers"
-    return sorted(f.stem[3:] for f in d.glob("tr-*.json")) if d.exists() else []
+    if is_local() or repository().in_workspace(pid):
+        d = pdir(pid) / "layers"
+        return sorted(f.stem[3:] for f in d.glob("tr-*.json")) if d.exists() else []
+    return sorted(k[3:] for k in document(pid).layers if k.startswith("tr-"))
 
 
 def parsed(pid):
-    if _nonlocal():
-        saved = document(pid)
-        return parse(saved.source.html, saved.meta)
-    d = pdir(pid)
-    return parse(read_text(d / "source.html"), json.loads(read_text(d / "meta.json")))
+    if is_local() or repository().in_workspace(pid):
+        d = pdir(pid)
+        return parse(read_text(d / "source.html"), json.loads(read_text(d / "meta.json")))
+    doc = document(pid)
+    if doc.source.html is None or doc.meta is None:
+        raise FileNotFoundError(pid)
+    return parse(doc.source.html, doc.meta)
 
 
 def assemble(pid, only=None):
-    """The paper as the reader needs it, from the layers alone (no model call). only: the translations to carry (a page
-    saved in one language), else all of them."""
-    doc = parsed(pid)
-    en = read(pid, "en")
+    """Assemble reader levels without loading unrelated local attachments."""
+    if is_local():
+        doc, en = parsed(pid), read(pid, "en")
+        available = languages(pid)
+        translation = lambda lang: read(pid, f"tr-{lang}")
+    else:
+        saved = document(pid)
+        if saved.source.html is None or saved.meta is None:
+            raise FileNotFoundError(pid)
+        doc, en = parse(saved.source.html, saved.meta), saved.layers.get("en")
+        available = sorted(k[3:] for k in saved.layers if k.startswith("tr-"))
+        translation = lambda lang: saved.layers[f"tr-{lang}"]
     meta = doc["meta"]
     meta["langs"], meta["stale"], meta["versions"], meta["translated"] = [], [], {}, []
     meta["lang"] = base = text_lang(pid, en)   # (the reader's, the page's: the language its own levels are in)
@@ -375,10 +439,10 @@ def assemble(pid, only=None):
     else:
         for u in doc["units"].values():
             u["lad"] = ladder.local(u, doc["atoms"], cjk)
-    for lang in languages(pid):
+    for lang in available:
         if only is not None and lang not in only:
             continue
-        tr = read(pid, f"tr-{lang}")
+        tr = translation(lang)
         if lang == base and (not en or tr.get("base") != en["version"]):
             continue   # a translation into the text's own language (before 0.10.33): read while its ladder stands
         apply_tr(doc, lang, tr)
@@ -396,33 +460,38 @@ def assemble(pid, only=None):
     return doc
 
 
-def papers():
-    if _nonlocal():
-        return sorted([{'id': i.id, 'title': i.meta['title'], 'titles': i.titles,
-                        'authors': i.meta.get('authors', []), 'langs': i.languages,
-                        'updated': i.updated, 'notes': i.note_count} for i in repository().list()],
-                      key=lambda item: -item['updated'])
-    """Every paper on disk, newest layer first."""
+def papers(index=None):
+    if is_local():
+        """Every paper on disk, newest layer first."""
+        out = []
+        root = library_root() / "papers"
+        for d in root.iterdir() if root.exists() else []:
+            mf = d / "meta.json"
+            if d.name.startswith(".") or not mf.exists():
+                continue
+            meta = json.loads(read_text(mf))
+            en = read(d.name, "en")
+            base = text_lang(d.name, en)
+            langs_ = list(dict.fromkeys(([base] if en else []) + languages(d.name)))
+            titles = {}
+            for lang in languages(d.name):
+                t = (read(d.name, f"tr-{lang}") or {}).get("title")
+                if t:
+                    titles[lang] = t
+            mtimes = [f.stat().st_mtime for f in (d / "layers").glob("*.json")] if (d / "layers").exists() else []
+            nf = d / "notes.json"
+            out.append({"id": d.name, "title": meta["title"], "titles": titles, "authors": meta.get("authors", []),
+                        "langs": langs_, "updated": max(mtimes) if mtimes else mf.stat().st_mtime,
+                        "notes": len(json.loads(read_text(nf)).get("notes", [])) if nf.exists() else 0,
+                        **({"zotero": True} if meta.get("zotero") else {})})
+        return sorted(out, key=lambda p: -p["updated"])
+    """The backend's document index, without loading originals or attachments."""
     out = []
-    root = library_root() / "papers"
-    for d in root.iterdir() if root.exists() else []:
-        mf = d / "meta.json"
-        if d.name.startswith(".") or not mf.exists():
-            continue
-        meta = json.loads(read_text(mf))
-        en = read(d.name, "en")
-        base = text_lang(d.name, en)
-        langs_ = list(dict.fromkeys(([base] if en else []) + languages(d.name)))
-        titles = {}
-        for lang in languages(d.name):
-            t = (read(d.name, f"tr-{lang}") or {}).get("title")
-            if t:
-                titles[lang] = t
-        mtimes = [f.stat().st_mtime for f in (d / "layers").glob("*.json")] if (d / "layers").exists() else []
-        nf = d / "notes.json"
-        out.append({"id": d.name, "title": meta["title"], "titles": titles, "authors": meta.get("authors", []),
-                    "langs": langs_, "updated": max(mtimes) if mtimes else mf.stat().st_mtime,
-                    "notes": len(json.loads(read_text(nf)).get("notes", [])) if nf.exists() else 0,
+    for info in repository().list() if index is None else index:
+        meta = info.meta
+        out.append({"id": info.id, "title": meta["title"], "titles": info.titles,
+                    "authors": meta.get("authors", []), "langs": info.languages,
+                    "updated": info.updated, "notes": info.note_count, "readable": info.readable,
                     **({"zotero": True} if meta.get("zotero") else {})})
     return sorted(out, key=lambda p: -p["updated"])
 
@@ -434,10 +503,10 @@ def trash(pid, kept=None):
     return Path(repository().backend.trash(pid, kept))
 
 
-def untrash(pid):
+def untrash(pid, revision=None):
     """A paper deleted last back in the list, as it was (its latest time in papers/.trash), and its place in the
     library as trash kept it ({} when none); None when there is none there, or a paper of that id is listed again."""
-    return repository().backend.restore(pid)
+    return repository().restore(pid, revision)
 
 
 TRASH_DAYS = 30

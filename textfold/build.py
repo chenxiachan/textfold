@@ -108,6 +108,7 @@ def data_uri(f, max_side=1600):
     return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+@store.in_document
 def inline_images(doc, app=False):
     """Figures go inside the page: one file that still works when forwarded, previewed, or opened on a phone. In the app
     a picture other than a drawing is the server's to give (/p/<id>/img/<name>): a page carrying a README's GIFs inside
@@ -138,6 +139,7 @@ def payload(doc, app, katex=None, saved=None, pdf=None, mermaid=None):
         data["pdfAt"] = pdf
     if saved:   # saved from the reader: its notes (kept apart from any other page's in the viewer's browser), its language
         data.update(saved)
+    data["cloudSync"] = bool(app and doc.get("cloudSync"))
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 

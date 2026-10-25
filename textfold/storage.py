@@ -1,6 +1,8 @@
 """Document repositories. File layout and parser workspaces stay internal."""
 import contextlib
+import hashlib
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -14,7 +16,10 @@ from ._storage_layout import DirectoryFiles, LegacyLayout, checked_id, checked_k
 
 
 def document_info(doc):
-    base = (doc.layers.get("en") or {}).get("lang") or "en"   # (the ladder's own language: store.text_lang)
+    from . import langs, store
+    base = (doc.layers.get("en") or {}).get("lang")
+    if base not in langs.LANGS:
+        base = store._detect(doc.source.html or "")
     translated = sorted(k[3:] for k in doc.layers if k.startswith("tr-"))
     languages = list(dict.fromkeys(([base] if "en" in doc.layers else []) + translated))
     titles = {k[3:]: v["title"] for k, v in doc.layers.items() if k.startswith("tr-") and v.get("title")}
@@ -36,6 +41,52 @@ class LocalDirectoryBackend:
         self._files = DirectoryFiles(self.root)
         with _locks_guard:
             self._lock = _locks.setdefault(self.root, threading.RLock())
+        with self._lock:
+            self._recover()
+
+    @staticmethod
+    def _fingerprint(raw):
+        digest = hashlib.sha256()
+        for key, value in sorted(raw.items()):
+            digest.update(key.encode("utf-8") + b"\0")
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+        return digest.hexdigest()
+
+    def _recover(self):
+        """Recover only our journaled swaps, never unrelated hidden folders."""
+        from .storage_settings import _process_alive
+        papers = self._files.path("papers")
+        for stage in papers.glob(".document-*"):
+            if stage.is_symlink() or getattr(stage, "is_junction", lambda: False)():
+                continue
+            try:
+                journal = json.loads((stage / "transaction.json").read_text(encoding="utf-8"))
+                if not isinstance(journal, dict) or journal.get("format") != "textfold/document-save":
+                    continue
+                folder = self._path(journal["id"])
+                owner = journal["pid"]
+                if owner != os.getpid() and _process_alive(owner):
+                    continue
+                ready, backup = stage / "ready", stage / "backup"
+                if any(p.is_symlink() or getattr(p, "is_junction", lambda: False)() for p in (ready, backup)):
+                    continue
+                if not folder.exists() and backup.is_dir():
+                    rename_directory(backup, folder)
+                elif not folder.exists() and journal.get("new") and ready.is_dir():
+                    if self._fingerprint(LegacyLayout.read_folder(ready)) != journal["digest"]:
+                        continue
+                    rename_directory(ready, folder)
+                elif backup.exists():
+                    # Another writer may have recreated this ID. Keep the
+                    # backup unless this is exactly the published candidate.
+                    if self._fingerprint(LegacyLayout.read_folder(folder)) != journal["digest"]:
+                        continue
+                if folder.exists():
+                    shutil.rmtree(stage)
+            except (OSError, ValueError, KeyError, TypeError):
+                # An unavailable/ambiguous backup remains recoverable on disk.
+                continue
 
     def _path(self, identity):
         return self._files.path("papers/" + checked_id(identity))
@@ -133,6 +184,9 @@ class LocalDirectoryBackend:
                     continue
             return out
 
+    def prepare_import(self, document_id):
+        checked_id(document_id)  # Deleted local folders already leave no index.
+
     def delete(self, document_id):
         with self._lock:
             path = self._path(document_id)
@@ -151,13 +205,30 @@ class LocalDirectoryBackend:
                 DirectoryFiles(target).write("library.json", json.dumps(placement, ensure_ascii=False).encode("utf-8"))
             return str(target)
 
-    def restore(self, document_id):
+    def _trash_revision(self, document_id):
+        root = self.root / "papers" / ".trash"
+        entries = []
+        for folder in sorted(root.glob(f"{checked_id(document_id)}-????????-??????")):
+            # Metadata only. Include every retained incarnation, so a stale
+            # confirmation cannot erase a newly deleted copy of the same ID.
+            entries.append((folder.name, folder.lstat().st_mtime_ns))
+            if not folder.is_symlink() and not getattr(folder, "is_junction", lambda: False)():
+                entries.extend((str(p.relative_to(root)), p.stat().st_mtime_ns, p.stat().st_size)
+                               for p in sorted(folder.rglob("*")) if p.is_file() and not p.is_symlink())
+        return hashlib.sha256(repr(entries).encode()).hexdigest()
+
+    def _check_trash(self, document_id, revision):
+        if revision is not None and revision != self._trash_revision(document_id):
+            raise ConflictError("Trash changed; refresh before trying again")
+
+    def restore(self, document_id, revision=None):
         from .store import valid_id
         if not valid_id(document_id):
             return None
         with self._lock:
+            self._check_trash(document_id, revision)
             folder = self.root / "papers" / document_id
-            if folder.exists():
+            if folder.exists() or folder.is_symlink() or getattr(folder, "is_junction", lambda: False)():
                 return None
             pattern = re.compile(re.escape(document_id) + r"-\d{8}-\d{6}")
             gone = sorted(d for d in (self.root / "papers" / ".trash").glob(f"{document_id}-*")
@@ -173,14 +244,72 @@ class LocalDirectoryBackend:
             (folder / "library.json").unlink(missing_ok=True)
             return kept if isinstance(kept, dict) else {}
 
+    def list_trash(self):
+        """The latest retained copy of each document, without opening its payloads."""
+        from .store import valid_id
+        with self._lock:
+            root = self.root / "papers" / ".trash"
+            rows = {}
+            for folder in sorted(root.iterdir()) if root.is_dir() else []:
+                match = re.fullmatch(r"(.+)-(\d{8}-\d{6})", folder.name)
+                if not (match and valid_id(match[1]) and folder.is_dir()):
+                    continue
+                try:
+                    deleted = time.mktime(time.strptime(match[2], "%Y%m%d-%H%M%S"))
+                    meta = json.loads(decode_text((folder / "meta.json").read_bytes()))
+                    if not isinstance(meta, dict):
+                        continue
+                except (OSError, ValueError, OverflowError):
+                    continue
+                identity = match[1]
+                rows[identity] = {"id": identity, "title": meta.get("title") or identity,
+                                  "deleted_at": deleted, "restorable": not (self.root / "papers" / identity).exists(),
+                                  "revision": self._trash_revision(identity), "can_delete": True}
+            return sorted(rows.values(), key=lambda row: row["deleted_at"], reverse=True)
+
+    def delete_trashed(self, document_id, revision=None):
+        """Erase retained copies only; a linked original and an active copy stay intact."""
+        from .store import valid_id
+        if not valid_id(document_id):
+            raise ValueError("Invalid document id")
+        with self._lock:
+            self._check_trash(document_id, revision)
+            root = self.root / "papers" / ".trash"
+            if root.resolve().parent != (self.root / "papers").resolve():
+                raise ValueError("Trash folder escapes the library")
+            pattern = re.compile(re.escape(document_id) + r"-\d{8}-\d{6}")
+            removed = False
+            for folder in list(root.iterdir()) if root.is_dir() else []:
+                if not pattern.fullmatch(folder.name):
+                    continue
+                try:
+                    time.strptime(folder.name[-15:], "%Y%m%d-%H%M%S")
+                except ValueError:
+                    continue
+                if folder.is_symlink():
+                    folder.unlink()
+                elif getattr(folder, "is_junction", lambda: False)():
+                    os.rmdir(folder)   # remove the junction, never traverse its target
+                elif folder.is_dir():
+                    if folder.resolve().parent != root.resolve():
+                        raise ValueError("Trash entry escapes its folder")
+                    shutil.rmtree(folder)
+                else:
+                    continue
+                removed = True
+            return removed
+
     def purge(self, before):
         from .store import valid_id
         with self._lock:
             root = self.root / "papers" / ".trash"
             gone = []
+            if root.resolve().parent != (self.root / "papers").resolve():
+                return gone
             for folder in sorted(root.iterdir()) if root.is_dir() else []:
                 match = re.fullmatch(r"(.+)-(\d{8}-\d{6})", folder.name)
-                if not (match and valid_id(match[1]) and folder.is_dir() and not folder.is_symlink()):
+                if not (match and valid_id(match[1]) and folder.is_dir() and not folder.is_symlink() and
+                        not getattr(folder, "is_junction", lambda: False)()):
                     continue
                 try:
                     at = time.mktime(time.strptime(match[2], "%Y%m%d-%H%M%S"))
@@ -230,10 +359,29 @@ class DocumentStore:
         self.cache_token = object()
         self._sessions = threading.local()
 
+    def list_trash(self):
+        return self.backend.list_trash()
+
+    def prepare_import(self, document_id):
+        """Explicit user import/generation; never used by ordinary saves/sync."""
+        checked_id(document_id)
+        prepare = getattr(self.backend, "prepare_import", None)
+        if prepare:
+            prepare(document_id)
+
+    def restore(self, document_id, revision=None):
+        return self.backend.restore(document_id) if revision is None else self.backend.restore(document_id, revision)
+
+    def delete_trashed(self, document_id, revision=None):
+        return self.backend.delete_trashed(document_id, revision)
+
     def _active(self):
         if not hasattr(self._sessions, "paths"):
             self._sessions.paths = {}
         return self._sessions.paths
+
+    def in_workspace(self, identity):
+        return identity in self._active()
 
     def get(self, identity):
         checked_id(identity)
@@ -290,6 +438,8 @@ class DocumentStore:
 
     # Compatibility for old importers only. A backend doesn't implement these.
     def has(self, identity, name="meta.json"):
+        if identity in self._active():
+            return DirectoryFiles(self._active()[identity].folder).exists(name)
         if isinstance(self.backend, LocalDirectoryBackend) and identity not in self._active():
             return DirectoryFiles(self.backend._path(identity)).exists(name)
         try:
@@ -299,6 +449,8 @@ class DocumentStore:
         return checked_key(name) in LegacyLayout.encode(doc)
 
     def read_asset(self, identity, name):
+        if identity in self._active():
+            return DirectoryFiles(self._active()[identity].folder).read(name)
         if isinstance(self.backend, LocalDirectoryBackend) and identity not in self._active():
             return DirectoryFiles(self.backend._path(identity)).read(name)
         raw = LegacyLayout.encode(self.get(identity))
@@ -308,6 +460,9 @@ class DocumentStore:
             raise FileNotFoundError(name) from None
 
     def write_asset(self, identity, name, data):
+        if identity in self._active():
+            DirectoryFiles(self._active()[identity].folder).write(checked_key(name), data)
+            return
         if isinstance(self.backend, LocalDirectoryBackend) and identity not in self._active():
             with self.backend._lock:
                 DirectoryFiles(self.backend.root / 'papers' / checked_id(identity)).write(checked_key(name), data)
@@ -336,12 +491,29 @@ class DocumentStore:
         if current != original:
             saved = self._publish(identity, session.base, original, current)
             base = saved if saved is not None else Document(identity)
-            LegacyLayout.write_folder(session.folder, LegacyLayout.encode(base))
+            # Refresh only concurrent changes; large originals already on disk
+            # need neither a second read nor another copy at every checkpoint.
+            updated = LegacyLayout.encode(base)
+            files = DirectoryFiles(session.folder)
+            for key in current.keys() - updated.keys():
+                files.path(key).unlink()
+            for key, value in updated.items():
+                if current.get(key) != value:
+                    files.write(key, value)
             session.base = base
         return True
 
     @contextlib.contextmanager
     def workspace(self, identity, write=True):
+        checked_id(identity)
+        defer = getattr(self.backend, "defer_sync", None)
+        outer = write and identity not in self._active() and defer is not None
+        with defer(identity) if outer else contextlib.nullcontext():
+            with self._workspace(identity, write) as folder:
+                yield folder
+
+    @contextlib.contextmanager
+    def _workspace(self, identity, write=True):
         """Parser bridge: materialize a document and merge completed changes.
 
         This is application code, never something a backend provides. Model replies
@@ -404,5 +576,5 @@ class DocumentStore:
         if identity in self._active():
             return self._active()[identity].folder
         if isinstance(self.backend, LocalDirectoryBackend):
-            return self.backend._path(identity)
+            return self.backend.root / "papers" / identity
         raise RuntimeError("A local document path requires a document workspace")

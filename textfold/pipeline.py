@@ -31,67 +31,74 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
             raise llm.Stopped()
 
     pid = store.resolve(ref)
-    progress("fetch", 0, 1)
-    if store.is_imported(pid):   # stored when it was opened (local.py), or fetched once from Europe PMC (epmc.py)
-        if pid.startswith(("pmc", "ppr")):
-            epmc.fetch(pid)
-        elif pid.startswith(("biorxiv-", "medrxiv-")):
-            biorxiv.fetch(pid, progress)
-        elif pid.startswith("wiki-"):
-            wiki.fetch(pid)
-        elif pid.startswith("gh-"):
-            github.fetch(pid)
-        elif pid.startswith("web-"):
-            webpage.fetch(pid)
-        d = store.pdir(pid)
-    else:
-        try:
-            d = fetch(pid, store.library_root())
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                raise RuntimeError("no-html")  # the app shows its own sentence for this
-            raise
     check()
-    progress("parse", 0, 1)
-    doc = store.parsed(pid)
-    cache = d / "llm-cache"
-    en = store.read(pid, "en")
-    doc["meta"]["lang"] = base = store.text_lang(pid, en)   # (the ladder is written in it: ladder.prompt_for)
-    lang = lang or base
-    if cfg is None and (en is None or force or (lang != base and store.read(pid, f"tr-{lang}") is None)):
-        # fetched and parsed, so it can be read as written; its levels need a model
-        raise RuntimeError("No model is available: install Claude Code, Codex, Pi or WorkBuddy, or add an API provider in the settings")
-    model = llm.label(cfg) if cfg else ""
-    replaced = bool(doc["meta"].get("replaced"))   # its text replaced in place: a missing layer is made from the replies kept
-    if en is None or (force and lang == base):
+    store.repository().prepare_import(pid)
+    with store.repository().workspace(pid):
+        progress("fetch", 0, 1)
+        if store.is_imported(pid):   # stored when it was opened (local.py), or fetched once from Europe PMC (epmc.py)
+            if pid.startswith(("pmc", "ppr")):
+                epmc.fetch(pid)
+            elif pid.startswith(("biorxiv-", "medrxiv-")):
+                biorxiv.fetch(pid, progress)
+            elif pid.startswith("wiki-"):
+                wiki.fetch(pid)
+            elif pid.startswith("gh-"):
+                github.fetch(pid)
+            elif pid.startswith("web-"):
+                webpage.fetch(pid)
+            d = store.pdir(pid)
+        else:
+            try:
+                fetch(pid, store.library_root() if store.is_local() else store.DATA)
+                d = store.pdir(pid)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    raise RuntimeError("no-html")  # the app shows its own sentence for this
+                raise
+        store.repository().checkpoint(pid)
         check()
-        again = force and not (replaced and en is None)
-        ladder.build(doc, task(cfg, "ladder"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("ladder", a, b), force=again, stop=stop)
-        check()
-        progress("links", 0, 1)
-        links.build(doc, task(cfg, "links"), cache, log=log, force=again)
-        check()   # (stopped meanwhile, its text converted again: what it made is of the old text, and is not written)
-        store.save_en(doc, model)
+        progress("parse", 0, 1)
+        doc = store.parsed(pid)
+        cache = d / "llm-cache"
         en = store.read(pid, "en")
-    else:
-        store.apply_en(doc, en)
-    if lang != base:
-        if lang == "en":   # notes made on the ladder of a text in another language said "en" (it was always English)
-            notes.settle_base(pid, base)
-        tr = store.read(pid, f"tr-{lang}")
-        if force or tr is None or tr.get("base") != en["version"]:
+        doc["meta"]["lang"] = base = store.text_lang(pid, en)   # (the ladder is written in it: ladder.prompt_for)
+        lang = lang or base
+        if cfg is None and (en is None or force or (lang != base and store.read(pid, f"tr-{lang}") is None)):
+            # fetched and parsed, so it can be read as written; its levels need a model
+            raise RuntimeError("No model is available: install Claude Code, Codex, Pi or WorkBuddy, or add an API provider in the settings")
+        model = llm.label(cfg) if cfg else ""
+        replaced = bool(doc["meta"].get("replaced"))   # its text replaced in place: a missing layer is made from the replies kept
+        if en is None or (force and lang == base):
             check()
-            again = force and not (replaced and tr is None)
-            translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop)
+            again = force and not (replaced and en is None)
+            ladder.build(doc, task(cfg, "ladder"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("ladder", a, b), force=again, stop=stop)
             check()
-            store.save_tr(doc, lang, en["version"], model)
-        elif cfg is not None:
-            store.apply_tr(doc, lang, tr)
-            if translate.gaps(doc, lang):   # paragraphs it was stored without (a call that failed): asked for now
+            progress("links", 0, 1)
+            links.build(doc, task(cfg, "links"), cache, log=log, force=again)
+            check()   # (stopped meanwhile, its text converted again: what it made is of the old text, and is not written)
+            store.save_en(doc, model)
+            store.repository().checkpoint(pid)
+            en = store.read(pid, "en")
+        else:
+            store.apply_en(doc, en)
+        if lang != base:
+            if lang == "en":   # notes made on the ladder of a text in another language said "en" (it was always English)
+                notes.settle_base(pid, base)
+            tr = store.read(pid, f"tr-{lang}")
+            if force or tr is None or tr.get("base") != en["version"]:
                 check()
-                translate.fill(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), stop=stop)
-                was = tr.get("model") or model
+                again = force and not (replaced and tr is None)
+                translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop)
                 check()
-                store.save_tr(doc, lang, en["version"], was if was == model else f"{was} + {model}")
-    progress("done", 1, 1)
-    return pid
+                store.save_tr(doc, lang, en["version"], model)
+            elif cfg is not None:
+                store.apply_tr(doc, lang, tr)
+                if translate.gaps(doc, lang):   # paragraphs it was stored without (a call that failed): asked for now
+                    check()
+                    translate.fill(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), stop=stop)
+                    was = tr.get("model") or model
+                    check()
+                    store.save_tr(doc, lang, en["version"], was if was == model else f"{was} + {model}")
+        store.repository().checkpoint(pid)
+        progress("done", 1, 1)
+        return pid

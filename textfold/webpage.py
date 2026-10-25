@@ -34,10 +34,9 @@ def register(url):
     """A page's id (store.resolve), its address kept for the fetch."""
     url = url.strip()
     pid = pid_of(url)
-    d = store.pdir(pid)
-    if not (d / "meta.json").exists():
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "url.txt").write_text(url, encoding="utf-8")
+    if not store.has(pid):
+        with store.edit(pid, create=True) as doc:
+            doc.source.reference = url
     return pid
 
 
@@ -91,10 +90,9 @@ def fetch(pid, progress=None):
     # (macOS's own Python is built with LibreSSL; urllib3, which trafilatura brings, says so on import, harmlessly)
     warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
     import trafilatura
-    d = store.pdir(pid)
-    if (d / "meta.json").exists() and (d / "source.html").exists():
+    if store.readable(pid):
         return pid
-    url = store.read_text(d / "url.txt").strip()
+    url = store.document(pid).source.reference.strip()
     data, final, charset = _get(url)
     page = data.decode(charset or "utf-8", "replace") if charset else data
     tree = visible(page, final)
@@ -116,4 +114,4 @@ def fetch(pid, progress=None):
             "license": m.license if m and m.license and re.match(r"https?://", m.license) else "",
             "source": {"kind": "web", "site": site, "url": final}, "label": site}
     pre = local.prefetch(re.findall(r'<img[^>]*\ssrc="([^"]+)"', html))
-    return local.store_doc(pid, html, meta, "source.md", md, lambda folder: local.Images(folder, None, pre=pre).resolve, sizes=True)
+    return local.store_doc(pid, html, meta, "markdown", md, lambda folder: local.Images(folder, None, pre=pre).resolve, sizes=True)

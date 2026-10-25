@@ -81,6 +81,7 @@
     document.dispatchEvent(new Event('tf-lang'));   // (what else speaks it: the app's update)
   }
   let papers = BOOT.papers || [];
+  let trashDialog = null;
   let folders = BOOT.folders || { folders: [], of: {} };   // the reader's folders (each in its parent, or at the top), and which document is in which (library.py)
   let sbQuery = '';        // the sidebar's search, as typed
   let editing = null;      // a folder's name being written: 'new', or the folder's id
@@ -151,7 +152,7 @@
       }
       const langs = p.langs.map((l) => `<span${l === readLang ? ' class="on"' : ''}>${SHORT[l] || l.toUpperCase()}</span>`).join('');
       const active = PAPER && PAPER.id === p.id;
-      const unfinished = !j && !p.langs.length;   // stopped (or failed) before its first language: a click goes on with it
+      const unfinished = !j && !p.langs.length && !p.readable;   // a cached original can be read without generating levels
       return `<div class="sb-row${chosen.has(p.id) ? ' chosen' : ''}" data-pid="${p.id}" data-q="${esc(hay(p))}"><a class="sb-item${active ? ' active' : ''}${unfinished ? ' unfinished' : ''}" href="${unfinished ? '#' : `/p/${p.id}?lang=${pick(p)}`}"${unfinished ? ` data-resume="${p.id}"` : ''} title="${esc(p.title)}">
         <span class="sb-t">${esc(title)}</span><span class="sb-m"><span class="sb-id">${p.id}</span><span class="sb-langs">${langs}</span></span>
         ${j ? progress(j, T) : unfinished ? `<span class="sb-stage">${esc(T.unfinished)}</span>` : ''}</a>` +
@@ -203,6 +204,7 @@
         <button type="button" class="rail-btn rail-open" title="${esc(T.expand)}">${LIST}</button>
         <a class="rail-btn" href="/" title="${esc(T.new_paper)}">＋</a>
         <button type="button" class="rail-btn rail-settings" title="${esc(T.settings)}">⚙</button>
+        <button type="button" class="rail-btn rail-trash" title="${esc(T.trash_title)}" aria-label="${esc(T.trash_title)}">${svg('bin')}</button>
         ${window.TFTutorial && PAPER ? `<button type="button" class="rail-btn rail-help" title="${esc(T.tut_open)}">?</button>` : ''}
       </div>
       <div class="sb-find"><input type="search" class="sb-q" value="${esc(sbQuery)}" placeholder="${esc(T.sb_search)}" aria-label="${esc(T.sb_search)}" autocomplete="off" spellcheck="false">` +
@@ -215,7 +217,7 @@
         `<span class="sb-cn">${esc(T.sel_n.replace('{n}', chosen.size))}</span><button type="button" class="sb-cmove">${esc(T.sel_move)}</button>` +
         `<button type="button" class="sb-cdel">${esc(T.sel_delete)}</button>` +
         `<button type="button" class="sb-cx" title="${esc(T.sel_clear)}" aria-label="${esc(T.sel_clear)}">×</button></div>` : ''}
-      <div class="sb-foot"><button type="button" class="sb-zotero">${BOOKS}${esc(T.z_lib)}</button><button type="button" class="sb-settings">⚙ ${esc(T.settings)}</button>${window.TFTutorial && PAPER ? `<button type="button" class="sb-help">? ${esc(T.tut_open)}</button>` : ''}<div class="sb-model">${esc(modelLabel())}</div></div>
+      <div class="sb-foot"><button type="button" class="sb-zotero">${BOOKS}${esc(T.z_lib)}</button><button type="button" class="sb-trash">${svg('bin')}${esc(T.trash_title)}</button><button type="button" class="sb-settings">⚙ ${esc(T.settings)}</button>${window.TFTutorial && PAPER ? `<button type="button" class="sb-help">? ${esc(T.tut_open)}</button>` : ''}<div class="sb-model">${esc(modelLabel())}</div></div>
       <div class="sb-resize" role="separator" aria-orientation="vertical" tabindex="0" title="${esc(T.sb_resize)}" aria-label="${esc(T.sb_resize)}"></div>`;
     // polled every second while something generates: drawn again only when it changed, and where it was scrolled to
     const busy = jobs.some(live);
@@ -235,6 +237,7 @@
     side.querySelector('.sb-pin').onclick = () => setPinned(!pinned);
     side.querySelector('.rail-open').onclick = () => setCollapsed(false);
     side.querySelectorAll('.sb-settings, .rail-settings').forEach((b) => { b.onclick = openSettings; });
+    side.querySelectorAll('.sb-trash, .rail-trash').forEach((b) => { b.onclick = openTrash; });
     side.querySelector('.sb-zotero').onclick = () => openLibrary();
     side.querySelectorAll('.sb-help, .rail-help').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); window.TFTutorial.open(uiLang); }; });
     side.querySelectorAll('.sb-del').forEach((b) => { b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); deletePaper(b.dataset.del); }; });
@@ -898,6 +901,55 @@
 
   // ── a delete's Undo: for ten seconds the corner says what went, with a button that brings it back as it was (in
   //    its folder, under its name); the paper being read, deleted, is offered back on the page it goes to ──
+  async function openTrash() {
+    if (trashDialog) { trashDialog.focus(); return; }
+    const T = t(), dlg = h('dialog', 'settings trash-dialog');
+    trashDialog = dlg;
+    dlg.setAttribute('aria-labelledby', 'trash-title');
+    dlg.innerHTML = `<div class="st"><div class="trash-heading"><h2 id="trash-title">${esc(T.trash_title)}</h2><button type="button" class="trash-close" aria-label="${esc(T.close)}">×</button></div>` +
+      `<p class="st-note">${esc(T.trash_hint)}</p><p class="trash-error st-note warn" role="alert" hidden></p><div class="trash-list" aria-live="polite"></div></div>`;
+    const list = dlg.querySelector('.trash-list'), error = dlg.querySelector('.trash-error');
+    let busy = false;
+    const fail = (err) => { error.hidden = false; error.textContent = err.message; };
+    async function load() {
+      const rows = await api('/api/trash');
+      if (!dlg.open) return;
+      list.innerHTML = rows.length ? rows.map((p) => `<div class="trash-row"><div class="trash-document"><b>${esc(p.title)}</b>` +
+        `<span>${esc(p.id)} · ${esc(new Date(p.deleted_at * 1000).toLocaleDateString(I18N.htmlLang(uiLang)))}</span>` +
+        `${p.recovery || p.pending ? `<span>${esc(p.recovery ? T.trash_recovery : T.trash_pending)}</span>` : ''}</div>` +
+        `<div class="trash-actions"><button type="button" data-restore="${esc(p.id)}"${p.restorable ? '' : ' disabled'} title="${esc(p.restorable ? T.trash_restore : p.recovery ? T.trash_recovery : p.pending ? T.trash_pending : T.trash_exists)}">${esc(T.trash_restore)}</button>` +
+        `<button type="button" class="trash-delete" data-erase="${esc(p.id)}"${p.can_delete === false ? ' disabled' : ''} title="${esc(p.can_delete === false ? p.recovery ? T.trash_recovery : T.trash_pending : T.trash_delete)}">${esc(T.trash_delete)}</button></div></div>`).join('')
+        : `<p class="trash-empty">${esc(T.trash_empty)}</p>`;
+      for (const button of list.querySelectorAll('button')) button.onclick = async () => {
+        if (busy) return;
+        const pid = button.dataset.erase || button.dataset.restore;
+        const paper = rows.find((p) => p.id === pid);
+        if (button.dataset.erase && !confirm(T.trash_confirm.replace('{title}', paper.title))) return;
+        busy = true; error.hidden = true;
+        list.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        try {
+          if (button.dataset.erase) await api('/api/trash/delete', { paper: pid, revision: paper.revision });
+          else {
+            const r = await api('/api/papers/restore', { papers: [pid], revisions: { [pid]: paper.revision } });
+            papers = r.papers; folders = r.folders; renderSidebar();
+            if (!r.restored.includes(pid)) throw new Error(T.trash_changed);
+          }
+          await load();
+        } catch (err) { fail(err); try { await load(); } catch { /* keep the original error */ } }
+        finally { busy = false; }
+      };
+    }
+    dlg.querySelector('.trash-close').onclick = () => dlg.close();
+    dlg.addEventListener('close', () => { dlg.remove(); if (trashDialog === dlg) trashDialog = null; });
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    document.body.append(dlg); dlg.showModal();
+    list.textContent = T.loading || '…';
+    try { await load(); } catch (err) {
+      fail(err); list.innerHTML = `<button type="button">${esc(T.st_retry)}</button>`;
+      list.querySelector('button').onclick = () => { dlg.close(); openTrash(); };
+    }
+  }
+
   const UNDO = 'textfold.undo', UNDO_MS = 10000;
   const undoBox = h('div', 'gen-toast undo-toast');
   undoBox.hidden = true; toasts.append(undoBox);
@@ -1127,6 +1179,8 @@
   const landing = document.getElementById('landing');
   function renderLanding() {
     const T = t();
+    const storageError = document.getElementById('storage-error');
+    if (storageError) { storageError.hidden = !BOOT.storageError; storageError.textContent = BOOT.storageError ? `${T.cloud_unavailable} ${BOOT.storageError}` : ''; }
     document.documentElement.lang = I18N.htmlLang(uiLang);
     document.getElementById('h-tagline').textContent = T.hero;
     document.getElementById('ref').placeholder = T.placeholder;
@@ -1478,6 +1532,8 @@
     let bridgeStarting = false, bridgeState = null;
     let storageDraft = null, storageMode = null, storageBusy = false, storageError = null;   // ({code, message}: why a folder was refused)
     const dlg = h('dialog', 'settings prefs'); document.body.append(dlg);
+    let cloudDraft = null, cloudBusy = false, cloudError = '', cloudTested = false;
+    let syncState = null, syncError = '', conflicts = [], conflictCount = -1;
     dlg.addEventListener('close', () => { settingsOpen = false; });
     const T = () => t();
     const host = (u) => { try { return new URL(u).host; } catch { return u; } };
@@ -1486,18 +1542,73 @@
     // the library's folder (textfold/storage_settings.py): where it is, and another one from the next start, a copy of it
     // or a library already in a folder; why a folder is refused, in the reader's language
     function storageSection() {
-      const t = T(), v = data.storage;
-      if (!v) return '';
-      const mode = storageMode ?? v.mode ?? 'copy', disabled = storageBusy ? ' disabled' : '';
-      const why = storageError ? t[`storage_err_${storageError.code}`] || storageError.message : v.error ? t.storage_failed.replace('{e}', v.error) : '';
-      return `<h3>${esc(t.storage_title)}</h3><div class="st-form">
-        <p class="st-note">${esc(t.storage_current)} <code>${esc(v.path)}</code></p>
-        <label>${esc(t.storage_action)}<select class="st-storage-mode"${disabled}><option value="copy"${mode === 'copy' ? ' selected' : ''}>${esc(t.storage_copy)}</option><option value="existing"${mode === 'existing' ? ' selected' : ''}>${esc(t.storage_existing)}</option></select></label>
-        <label>${esc(t.storage_destination)}<div class="st-row" style="margin:0"><input class="st-storage-input" style="flex:1;min-width:0" value="${esc(storageDraft ?? v.pending ?? '')}" spellcheck="false"${disabled}>${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-storage-pick"${disabled}>${esc(t.storage_choose)}</button>` : ''}</div></label>
-        <p class="st-note">${esc(t.storage_explain)}</p>
-        ${v.pending ? `<p class="st-note ok">${esc(t.storage_pending)} <code>${esc(v.pending)}</code></p>` : ''}
-        ${why ? `<p class="st-note warn" role="alert">${esc(why)}</p>` : ''}
-        <div class="st-row end">${v.pending ? `<button class="st-btn st-storage-cancel"${disabled}>${esc(t.storage_cancel)}</button>` : ''}<button class="st-btn st-storage-save"${disabled}>${esc(storageBusy ? t.storage_saving : t.storage_save)}</button></div></div>`;
+      const t = T(), s = data.storage?.local || data.storage, c = data.cloudStorage;
+      if (!s) return `<h3>${esc(t.storage_title)}</h3><p class="st-note" role="status">${esc(t.st_scanning)}</p>`;
+      if (!cloudDraft && c) cloudDraft = { enabled: c.enabled, url: c.url, username: c.username, password: '', cache_path: c.cachePath || '' };
+      const d = cloudDraft || { enabled: false }, disabled = storageBusy || cloudBusy ? ' disabled' : '';
+      const why = storageError ? storageErrorMessage(storageError) : cloudError || (s.error ? t.storage_failed.replace('{e}', s.error) : c?.error || '');
+      return `<h3>${esc(t.storage_title)}</h3>
+        <div class="st-form st-storage-form">
+          <label for="st-cloud-mode">${esc(t.cloud_mode)}<select id="st-cloud-mode"${disabled}><option value="local"${d.enabled ? '' : ' selected'}>${esc(t.cloud_local)}</option><option value="cloud"${d.enabled ? ' selected' : ''}>${esc(t.cloud_title)}</option></select></label>
+          ${d.enabled ? `<label for="st-cloud-url">${esc(t.cloud_url)}<input id="st-cloud-url" type="url" placeholder="https://storage.example.com" autocomplete="url" spellcheck="false" value="${esc(d.url)}"${disabled}></label>
+          <div class="st-cloud-credentials"><label for="st-cloud-user">${esc(t.cloud_username)}<input id="st-cloud-user" autocomplete="username" value="${esc(d.username)}"${disabled}></label>
+          <label for="st-cloud-password">${esc(t.cloud_password)}<input id="st-cloud-password" type="password" autocomplete="new-password" placeholder="${esc(c?.hasPassword ? t.cloud_kept : '')}" value="${esc(d.password)}"${disabled}></label></div>
+          <label for="st-cache-path">${esc(t.sync_cache)}<div class="st-storage-path"><input id="st-cache-path" type="text" spellcheck="false" autocomplete="off" value="${esc(d.cache_path)}" placeholder="${esc(t.sync_cache_default)}"${disabled}>
+          ${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-cache-pick"${disabled}>${esc(t.storage_choose)}</button>` : ''}</div></label>
+          <p class="st-note">${esc(t.sync_cloud_explain)}</p>` : `
+          <label>${esc(t.storage_action)}<select class="st-storage-mode"${disabled}><option value="copy"${(storageMode ?? s.mode) === 'existing' ? '' : ' selected'}>${esc(t.storage_copy)}</option><option value="existing"${(storageMode ?? s.mode) === 'existing' ? ' selected' : ''}>${esc(t.storage_existing)}</option></select></label>
+          <div class="st-storage-current"><span class="st-meta">${esc(t.storage_current)}</span><code>${esc(s.path)}</code></div>
+          <label for="st-storage-path">${esc(t.storage_destination)}<div class="st-storage-path"><input id="st-storage-path" class="st-storage-input" type="text" spellcheck="false" autocomplete="off" value="${esc(storageDraft ?? (s.pending || s.path))}"${disabled}>
+          ${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-storage-pick"${disabled}>${esc(t.storage_choose)}</button>` : ''}</div></label>
+          <p class="st-note">${esc(t.storage_explain)}</p>
+          ${s.pending ? `<p class="st-note ok">${esc(t.storage_pending)} <code>${esc(s.pending)}</code></p>` : ''}`}
+          ${c?.restartRequired ? `<p class="st-note ok" role="status">${esc(t.cloud_restart)}</p>` : ''}
+          ${cloudTested ? `<p class="st-note ok" role="status">${esc(t.test_ok)}</p>` : ''}
+          ${why ? `<p class="st-note warn" role="alert">${esc(why)}</p>` : ''}
+          <div class="st-row end">${!d.enabled && s.pending ? `<button type="button" class="st-btn st-storage-cancel"${disabled}>${esc(t.storage_cancel)}</button>` : ''}
+          ${d.enabled ? `<button type="button" class="st-btn st-cloud-test"${disabled}>${esc(t.cloud_test)}</button>` : ''}
+          <button type="button" class="st-btn st-storage-save"${disabled}>${esc(storageBusy || cloudBusy ? t.storage_saving : t.storage_save)}</button></div>
+        </div><div class="st-sync">${syncSection()}</div>`;
+    }
+
+    function syncSection() {
+      if (data.cloudStorage?.active !== 'cloud') return conflicts.length ? `<h4>${esc(T().sync_conflicts.replace('{n}', conflicts.length))}</h4>${conflictSection()}` : '';
+      const t = T(), s = syncState || data.cloudStorage.sync;
+      if (!s) return '';
+      const busy = s.syncing ? ' disabled' : '', local = data.storage?.local || data.storage;
+      return `<div class="st-sync-status" role="status"><b>${esc(s.syncing ? t.sync_busy : s.online ? t.sync_online : t.sync_offline)}</b>
+        <span>${esc(t.sync_pending.replace('{n}', s.pending))} · ${esc(t.sync_conflicts.replace('{n}', s.conflicts))}</span></div>
+        <p class="st-note">${esc(t.sync_cache)}: <code>${esc(s.cachePath)}</code></p>
+        ${s.lastSync ? `<p class="st-note">${esc(t.sync_last)} ${esc(new Date(s.lastSync * 1000).toLocaleString())}</p>` : ''}
+        ${s.error || syncError ? `<p class="st-note warn" role="alert">${esc(syncError || s.error)}</p>` : ''}
+        <div class="st-sync-actions"><button type="button" class="st-btn" data-sync="sync"${busy}>${esc(t.sync_now)}</button>
+        <button type="button" class="st-btn" data-sync="import"${busy}>${esc(t.sync_import)}</button>
+        <button type="button" class="st-btn" data-sync="download"${busy}>${esc(t.sync_download)}</button>
+        <button type="button" class="st-btn" data-sync="clear"${busy}>${esc(t.sync_clear)}</button>
+        ${s.pending || s.conflicts ? `<a class="st-btn" href="/api/storage/export" download="textfold-pending.zip">${esc(t.sync_export)}</a>` : ''}</div>
+        <p class="st-note">${esc(t.sync_import_from)} <code>${esc(local?.path)}</code> · ${esc(t.sync_import_safe)}</p>
+        ${s.job ? `<p class="st-note">${esc(t['sync_' + s.job.action] || s.job.action)}: ${s.job.done}/${s.job.total}${s.job.error ? ` · ${esc(s.job.error)}` : ''}</p>` : ''}
+        ${s.import ? `<p class="st-note">${esc(t.sync_import_result.replace('{n}', s.import.imported).replace('{k}', s.import.conflicts.length))}${s.import.conflicts.length ? `<br>${s.import.conflicts.map(esc).join(', ')}` : ''}</p>` : ''}
+        ${conflictSection()}`;
+    }
+
+    function conflictSection() {
+      const t = T();
+      const preview = (c, v) => {
+        if (v === null) return `<p>${esc(t.sync_keep_deleted)}</p>`;
+        if (c.key.startsWith('annotation/')) return `${v.anchor?.quote?.exact ? `<blockquote>${esc(v.anchor.quote.exact)}</blockquote>` : ''}<pre>${esc(v.text || (v.kind === 'ask' ? t.n_chat : t.sync_annotation))}</pre><p class="st-meta">${esc([v.color, v.updated].filter(Boolean).join(' · '))}</p>`;
+        const full = JSON.stringify(v, null, 2);
+        return `<pre>${esc(full.slice(0, 4000))}${full.length > 4000 ? '…' : ''}</pre>${full.length > 4000 ? `<p class="st-note">${esc(t.sync_preview)}</p>` : ''}`;
+      };
+      return conflicts.map((c, i) => `<details class="st-conflict" data-conflict="${i}"><summary>${esc(c.title || c.document)} · ${esc(c.key.startsWith('annotation/') ? t.sync_annotation : c.key)}</summary>
+          ${c.key === 'document-state' ? `<p>${esc(t.sync_deleted)}</p><button type="button" class="st-btn" data-choice="restore">${esc(t.sync_restore)}</button> <button type="button" class="st-btn" data-choice="delete">${esc(t.sync_keep_deleted)}</button>` :
+          `<p class="st-note">${esc(t.sync_revision_hint)}</p><div class="st-conflict-variants">${c.variants.map((v, k) => `<div>${preview(c, v)}<button type="button" class="st-btn" data-choice="${k}">${esc(t.sync_choose.replace('{n}', k + 1))}</button></div>`).join('')}</div>
+          ${c.key.startsWith('annotation/') && c.variants.some((v) => v) ? `<label>${esc(t.sync_manual)}<textarea class="st-conflict-text" rows="4">${esc(c.variants.find((v) => v)?.text || '')}</textarea></label><button type="button" class="st-btn" data-manual="true" data-choice="${c.variants[0] ? 0 : 1}">${esc(t.sync_resolve)}</button>` : ''}`}</details>`).join('');
+    }
+
+    function storageErrorMessage(error) {
+      if (typeof error === 'string') return error;
+      return T()[`storage_err_${error.code}`] || error.message || '';
     }
 
     function modelSection() {
@@ -1609,27 +1720,6 @@
         </div>
         <footer class="stp-foot"><p>${esc(t.key_note)}</p><button type="button" class="primary st-close">${esc(t.st_close)}</button></footer></div>`;
       wire();
-      const storageInput = q('.st-storage-input'), storageSelect = q('.st-storage-mode');
-      if (storageInput) storageInput.oninput = () => { storageDraft = storageInput.value; };
-      if (storageInput) storageInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveLibrary(); } };
-      if (storageSelect) storageSelect.onchange = () => { storageMode = storageSelect.value; };
-      // a folder chosen in the system's dialog is the choice made: kept at once for the next start, as the line under it
-      // says (#67: chosen, and the button under the explanation not pressed, it was gone after the restart)
-      const pickLibrary = q('.st-storage-pick');
-      if (pickLibrary) pickLibrary.onclick = async () => {
-        try { const path = await window.desktop.chooseLibraryFolder(); if (path) { storageDraft = path; await saveLibrary(); } }
-        catch (error) { storageError = { message: error.message }; render(); }
-      };
-      async function saveLibrary(cancel = false) {
-        storageBusy = true; storageError = null; render();
-        try { data.storage = await api('/api/storage', { path: storageDraft ?? data.storage.pending, mode: storageMode ?? data.storage.mode, cancel }); }
-        catch (error) { storageError = { code: error.code, message: error.message }; }
-        storageBusy = false; render();
-      }
-      const saveLibraryButton = q('.st-storage-save'), cancelLibraryButton = q('.st-storage-cancel');
-      if (saveLibraryButton) saveLibraryButton.onclick = () => saveLibrary();
-      if (cancelLibraryButton) cancelLibraryButton.onclick = () => saveLibrary(true);
-
       renderEngine();
       q('.stp-body').scrollTop = y;   // (after the engine's part, which makes the sections their full height)
       if (form && !formShown) q('.st-form').scrollIntoView({ block: 'nearest' });   // adding or editing a provider: the form in view
@@ -1676,9 +1766,42 @@
       q('.st-model-area').innerHTML = modelSection() + discoveryState();
       q('.st-agent-area').innerHTML = agentSection();
       if (!form) q('.st-provider-area').innerHTML = providerSection();
+      if (!cloudDraft) q('.st-storage').innerHTML = storageSection();
       renderEngine();
       wire();
     };
+    function wireSync() {
+      dlg.querySelectorAll('[data-sync]').forEach((b) => { b.onclick = async () => {
+        b.disabled = true; syncError = '';
+        try { syncState = await api('/api/storage/sync', { action: b.dataset.sync }); }
+        catch (error) { syncError = error.message; }
+        await refreshSync(true);
+      }; });
+      dlg.querySelectorAll('[data-choice]').forEach((b) => { b.onclick = async () => {
+        const box = b.closest('[data-conflict]'), c = conflicts[+box.dataset.conflict];
+        b.disabled = true; syncError = '';
+        const value = { action: 'resolve', document: c.document, conflict: c.id,
+          choice: c.key === 'document-state' ? b.dataset.choice : +b.dataset.choice };
+        if (b.dataset.manual) value.text = box.querySelector('textarea').value;
+        try { await api('/api/storage/sync', value); }
+        catch (error) { syncError = error.message; }
+        await refreshSync(true);
+      }; });
+    }
+    async function refreshSync(force = false) {
+      if (data.cloudStorage?.active !== 'cloud') return;
+      if (!dlg.isConnected) return;
+      try {
+        syncState = await api('/api/storage/sync');
+        if (force || !syncState || syncState.conflicts !== conflictCount) {
+          conflicts = await api('/api/storage/conflicts'); conflictCount = syncState?.conflicts ?? conflicts.length;
+          document.dispatchEvent(new CustomEvent('tf-conflicts', { detail: conflicts.length }));
+        }
+        const box = q('.st-sync');
+        // Don't replace a conflict form while its retained revisions are being reviewed.
+        if (box && (force || !box.querySelector('details[open]'))) { box.innerHTML = syncSection(); wireSync(); }
+      } catch (error) { syncError = error.message; }
+    }
     async function discover() {
       refreshing = true; refreshError = '';
       q('.st-model-area').innerHTML = modelSection() + discoveryState(); wire();
@@ -1695,6 +1818,52 @@
     }
 
     function wire() {
+      for (const [id, key] of [['st-cloud-url', 'url'], ['st-cloud-user', 'username'], ['st-cloud-password', 'password'], ['st-cache-path', 'cache_path']]) {
+        const input = q('#' + id);
+        if (input) input.oninput = () => { cloudDraft[key] = input.value; cloudTested = false; };
+      }
+      const cloudMode = q('#st-cloud-mode');
+      if (cloudMode) cloudMode.onchange = () => { cloudDraft.enabled = cloudMode.value === 'cloud'; render(); };
+      const storageSelect = q('.st-storage-mode'); if (storageSelect) storageSelect.onchange = () => { storageMode = storageSelect.value; };
+      const storageInput = q('.st-storage-input');
+      if (storageInput) {
+        storageInput.oninput = () => { storageDraft = storageInput.value; };
+        storageInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); saveStorage(); } };
+      }
+      for (const [selector, key] of [['.st-storage-pick', 'local'], ['.st-cache-pick', 'cache']]) {
+        const pick = q(selector);
+        if (pick) pick.onclick = async () => {
+          try {
+            const path = await window.desktop.chooseLibraryFolder();
+            if (path) { if (key === 'cache') cloudDraft.cache_path = path; else storageDraft = path; if (key === 'local') await saveStorage(); else render(); }
+          } catch (error) { storageError = { code: error.code, message: error.message }; render(); }
+        };
+      }
+      const saveStorage = async (test = false, cancel = false) => {
+        storageBusy = true; storageError = null; cloudError = ''; cloudTested = false; render();
+        try {
+          if (test) { await api('/api/storage/cloud/test', cloudDraft); cloudTested = true; }
+          else if (cloudDraft.enabled) {
+            data.cloudStorage = await api('/api/storage/cloud', cloudDraft); cloudDraft.password = '';
+          } else {
+            // Validate switching first: an unsynced cloud workspace must remain selected.
+            if (data.cloudStorage?.enabled) data.cloudStorage = await api('/api/storage/cloud', { enabled: false });
+            const local = data.storage?.local || data.storage;
+            if (cancel || (storageDraft && storageDraft !== (local.pending || local.path)) || (storageMode && storageMode !== local.mode)) {
+              data.storage = await api('/api/storage', cancel ? { cancel: true } : { path: storageDraft ?? (local.pending || local.path), mode: storageMode ?? local.mode });
+              const saved = data.storage.local || data.storage;
+              storageDraft = saved.pending || saved.path;
+            }
+          }
+        } catch (error) { storageError = { code: error.code, message: error.message }; }
+        storageBusy = false;
+        if (dlg.isConnected) render();
+      };
+      const storageSave = q('.st-storage-save'), storageCancel = q('.st-storage-cancel'), cloudTest = q('.st-cloud-test');
+      if (storageSave) storageSave.onclick = () => saveStorage();
+      if (storageCancel) storageCancel.onclick = () => saveStorage(false, true);
+      if (cloudTest) cloudTest.onclick = () => saveStorage(true);
+      wireSync();
       const retry = q('.st-retry');
       if (retry) retry.onclick = discover;
       dlg.querySelectorAll('.st-close').forEach((b) => { b.onclick = () => dlg.close(); });
@@ -1795,7 +1964,8 @@
       } catch (x) { if (!form) return; form.err = x.message; const e2 = q('.pf-err'); if (e2) e2.textContent = x.message; }
     }
 
-    dlg.addEventListener('close', () => dlg.remove());
+    const syncTimer = setInterval(() => refreshSync(), 3000);
+    dlg.addEventListener('close', () => { clearInterval(syncTimer); dlg.remove(); });
     render();
     dlg.showModal();
     if (window.desktop && window.desktop.checkForUpdates) window.desktop.version().then((v) => {
@@ -1816,6 +1986,46 @@
     discover();
     if (jobs.some((j) => j.kind === 'install' && live(j))) follow();   // an install started on the landing
   }
+
+  const syncBadge = h('button', 'storage-sync-badge');
+  syncBadge.type = 'button'; syncBadge.hidden = true; syncBadge.onclick = () => openSettings();
+  document.body.append(syncBadge);
+  let offlineNotice = false, syncPolling = false, lastLibraryStamp = '', localConflictCount = 0;
+  document.addEventListener('tf-conflicts', (event) => { localConflictCount = event.detail; pollStorage(); });
+  document.addEventListener('tf-save-state', (event) => {
+    if (event.detail.local && !event.detail.online && !offlineNotice) {
+      offlineNotice = true; alert(t().sync_saved_local);
+    }
+    pollStorage();
+  });
+  async function pollStorage() {
+    if (!BOOT.cloudSync || syncPolling || document.hidden) return;
+    syncPolling = true;
+    try {
+      const s = await api('/api/storage/sync');
+      syncBadge.hidden = !s && !localConflictCount;
+      if (!s && localConflictCount) syncBadge.textContent = t().sync_conflicts.replace('{n}', localConflictCount);
+      if (s) {
+        if (s.online) offlineNotice = false;
+        else if (s.pending && !offlineNotice) { offlineNotice = true; alert(t().sync_saved_local); }
+        const T = t();
+        syncBadge.textContent = `${s.syncing ? T.sync_busy : s.online ? T.sync_online : T.sync_offline} · ${T.sync_pending.replace('{n}', s.pending)}${s.conflicts ? ' · ' + T.sync_conflicts.replace('{n}', s.conflicts) : ''}`;
+        syncBadge.classList.toggle('warn', !s.online || !!s.conflicts);
+        const stamp = `${s.lastSync}:${s.pending}`;
+        if (s.lastSync && stamp !== lastLibraryStamp) {
+          lastLibraryStamp = stamp;
+          document.dispatchEvent(new Event('tf-storage-synced'));
+          const [items, groups] = await Promise.all([api('/api/papers'), api('/api/folders')]);
+          papers = items; folders = groups; renderSidebar();
+        }
+      }
+    } catch { /* the local app may be restarting */ }
+    finally { syncPolling = false; }
+  }
+  const resumeStorage = (reason) => { if (!BOOT.cloudSync) return; api('/api/storage/sync', { action: 'sync', reason }).catch(() => {}); pollStorage(); };
+  addEventListener('online', () => resumeStorage('online')); addEventListener('focus', () => resumeStorage('focus'));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeStorage('focus'); });
+  if (BOOT.cloudSync) { setInterval(pollStorage, 10000); pollStorage(); }
 
   renderSidebar();
   if (landing) refreshModels().then((d) => {

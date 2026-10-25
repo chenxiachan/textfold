@@ -17,12 +17,15 @@ before this was kept is dated as well); when it was opened, each time the reader
      "added": {"2512.24601": 1791000000.0}, "opened": {"2512.24601": 1792000000.0}}
 """
 import json
+import copy
 import re
 import secrets
 import threading
 import time
 
 from . import store
+from .documents import ConflictError, LibraryState
+from . import sync_records
 
 _lock = threading.Lock()
 
@@ -36,11 +39,20 @@ def _times(d, key):
     return {p: float(t) for p, t in v.items() if store.valid_id(p) and isinstance(t, (int, float))}
 
 
+class _Catalog(dict):
+    pass  # merge base lives on the object, never in exported JSON
+
+
 def load():
+    native = store.is_local()
     try:
-        d = json.loads(store.read_text(path()))
+        if native:
+            state, d = None, json.loads(store.read_text(path()))
+        else:
+            state = store.repository().library()
+            d = state.catalog
     except (OSError, ValueError):
-        d = {}
+        state, d = LibraryState(), {}
     folders = [{"id": f["id"], "name": f["name"], **({"parent": f["parent"]} if isinstance(f.get("parent"), str) else {})}
                for f in d.get("folders") or []
                if isinstance(f, dict) and isinstance(f.get("id"), str) and isinstance(f.get("name"), str)]
@@ -55,17 +67,41 @@ def load():
             f.pop("parent", None)
     of = d.get("of") if isinstance(d.get("of"), dict) else {}
     names = d.get("names") if isinstance(d.get("names"), dict) else {}
-    return {"folders": folders, "of": {p: f for p, f in of.items() if f in ids and store.valid_id(p)},
+    result = _Catalog({"folders": folders, "of": {p: f for p, f in of.items() if f in ids and store.valid_id(p)},
             "names": {p: n for p, n in names.items() if store.valid_id(p) and isinstance(n, str) and n.strip()},
-            "added": _times(d, "added"), "opened": _times(d, "opened")}
+            "added": _times(d, "added"), "opened": _times(d, "opened")})
+    if native:
+        return dict(result)
+    result.state = copy.deepcopy(state)
+    return result
 
 
 def _save(d):
-    f = path()
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f.name + ".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(f)
+    if store.is_local():
+        f = path()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.name + ".tmp")
+        tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(f)
+        return
+    base = getattr(d, "state", None) or store.repository().library()
+    local = copy.deepcopy(base)
+    local.catalog.update(d)
+    commit(base, local)
+
+
+def commit(base, local):
+    """Keep a UI operation's actual base across concurrent sync/organization edits."""
+    for attempt in range(4):
+        current = store.repository().library()
+        merged, _ = sync_records.reconcile(sync_records.library_records(base), sync_records.library_records(local), sync_records.library_records(current))
+        state = sync_records.library_value(merged, current.revision)
+        try:
+            store.repository().save_library(state)
+            return state
+        except ConflictError:
+            if attempt == 3:
+                raise
 
 
 def folders():
@@ -176,20 +212,25 @@ def _papers(pids):
     return pids
 
 
-def _came_in(pid):
-    """When a document came in, from its folder: its oldest file, or the folder itself when that is older."""
-    d = store.pdir(pid)
-    st = d.stat()
-    times = [f.stat().st_mtime for f in d.rglob("*") if f.is_file()]
-    return min(times + [getattr(st, "st_birthtime", st.st_mtime)])
-
-
-def stamp(papers):
+def stamp(papers, index=None):
+    if store.is_local():
+        """The documents of the list (store.papers), each with when it came in ("added") and when it was last opened
+        ("opened", or None), and the name the reader gave it, if any; one listed for the first time is dated here and kept."""
+        with _lock:
+            d = load()
+            new = {p["id"]: _came_in(p["id"]) for p in papers if p["id"] not in d["added"]}
+            if new:
+                d["added"].update(new)
+                _save(d)
+        return [{**p, "added": d["added"][p["id"]], "opened": d["opened"].get(p["id"]),
+                 **({"name": d["names"][p["id"]]} if p["id"] in d["names"] else {})} for p in papers]
     """The documents of the list (store.papers), each with when it came in ("added") and when it was last opened
     ("opened", or None), and the name the reader gave it, if any; one listed for the first time is dated here and kept."""
     with _lock:
         d = load()
-        new = {p["id"]: _came_in(p["id"]) for p in papers if p["id"] not in d["added"]}
+        missing = [p["id"] for p in papers if p["id"] not in d["added"]]
+        created = {row.id: row.created for row in (store.repository().list() if index is None else index)} if missing else {}
+        new = {pid: created.get(pid, time.time()) for pid in missing}
         if new:
             d["added"].update(new)
             _save(d)
@@ -230,3 +271,11 @@ def remember(pid, kept):
             if k in kept and ok(kept[k]):
                 d[k][pid] = kept[k]
         _save(d)
+
+
+def _came_in(pid):
+    """When a document came in, from its folder: its oldest file, or the folder itself when that is older."""
+    d = store.pdir(pid)
+    st = d.stat()
+    times = [f.stat().st_mtime for f in d.rglob("*") if f.is_file()]
+    return min(times + [getattr(st, "st_birthtime", st.st_mtime)])

@@ -5,6 +5,8 @@
   GET  /api/papers            the papers on disk, each with when it came in and was last opened (library.py), and its
                               citekey when it was read from a Zotero item that has one (zotero.citekeys)
   GET  /api/jobs              generation jobs (queued, running, recently finished)
+  GET  /api/trash             retained documents: id, title, deletion time and whether restoration is possible
+  POST /api/trash/delete      {paper}: permanently erase that document's retained copies only, never an active copy
   POST /api/jobs/stop         {id}: stop a job: a queued one is dropped; a running one ends once the model calls under way
                               return (what they wrote is kept in the cache, so starting it again goes on from there)
   POST /api/generate          {paper, lang, force}: queue a generation; one runs at a time. paper: an arXiv id or
@@ -80,6 +82,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from .documents import ConflictError
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -136,6 +139,11 @@ def refresh_models():
     threading.Thread(target=refresh, daemon=True).start()
 
 
+def cloud_storage_status():
+    from . import cloud_settings
+    return cloud_settings.status(store.HOME, store.repository().backend)
+
+
 def models_payload():
     s = models.load_settings()
     with DISCOVERY_LOCK:
@@ -166,6 +174,7 @@ def models_payload():
         "presets": providers.PRESETS[:-1] + [models.ANTHROPIC_PRESET, providers.PRESETS[-1]],
         "useThoughtdagEnv": s.get("use_thoughtdag_env", True), "thoughtdagEnv": providers.THOUGHTDAG_ENV.exists(),
         "pdfTier": s.get("pdf_tier") or "fast", "engine": engine.status(), "storage": store.storage_status(),
+        "cloudStorage": cloud_storage_status(),
         "lang": s.get("lang") if s.get("lang") in langs.LANGS else None,
     }
 
@@ -182,7 +191,7 @@ class Jobs:
             try:
                 w = json.loads(store.read_text(side))
                 f = side.parent / Path(w.get("file") or side.stem + ".pdf").name
-                if f.exists() and not (store.pdir(f.stem) / "meta.json").exists():
+                if f.exists() and not store.has(f.stem):
                     self.pending[f.stem] = (str(f), w["name"], w["lang"])
             except (OSError, ValueError, KeyError, AttributeError):
                 pass
@@ -256,17 +265,21 @@ class Jobs:
             job.update(stage=stage, done=done, total=total)
             if stage in ("ladder", "links", "translate", "done"):   # parsed: the reader can open it (in its own words)
                 job["readable"] = True
-            if job["kind"] == "generate" and stage not in ("queued", "fetch") and (store.pdir(job["pid"]) / "meta.json").exists():
+            if job["kind"] == "generate" and stage not in ("queued", "fetch") and store.has(job["pid"]):
                 if not job.get("title"):   # a new paper's title, once it is parsed
                     try:
-                        job["title"] = json.loads(store.read_text(store.pdir(job["pid"]) / "meta.json"))["title"]
+                        job["title"] = json.loads(store.text(job["pid"], "meta.json"))["title"]
                     except (OSError, ValueError, KeyError):
                         pass
                 if job.get("attach") and not job.get("attached"):   # the reader's own copy of an online paper's PDF
-                    job["attached"] = True
                     try:
-                        if not (store.pdir(job["pid"]) / "source.pdf").exists():
+                        if not pdf.present(job["pid"]):
                             pdf.keep(job["pid"], Path(job["attach"]).read_bytes())
+                        # Never delete the only uploaded original while its
+                        # copy still exists only in the generation workspace.
+                        if not store.repository().checkpoint(job["pid"]):
+                            return
+                        job["attached"] = True
                         Path(job["attach"]).unlink()
                     except OSError:
                         pass
@@ -278,7 +291,7 @@ class Jobs:
         return log
 
     def _end(self, job, e, stop):
-        if job["pid"] and (store.pdir(job["pid"]) / "source.html").exists():
+        if job["pid"] and store.readable(job["pid"]):
             job["readable"] = True   # what failed was its levels: it reads as written
         if isinstance(e, (llm.Stopped, engine.Stopped)) or stop.is_set():
             job.update(status="stopped", stopping=False)
@@ -326,19 +339,19 @@ class Jobs:
             PAGES.pop(job["pid"], None)
 
     def _pdf_link(self, job, url=None):
-        url = url or store.read_text(store.pdir(job["pid"]) / "url.txt").strip()
+        url = url or store.text(job["pid"], "url.txt").strip()
         with urllib.request.urlopen(urllib.request.Request(url, headers=fetch.UA), timeout=90) as r:
             data = r.read(pdf.LIMIT + 1)
         if data[:5] != b"%PDF-" or len(data) > pdf.LIMIT:
             raise ValueError("not-pdf")
-        shutil.rmtree(store.pdir(job["pid"]), ignore_errors=True)   # (only its address was there)
+        store.discard_document(job["pid"])   # (only its address was there)
         pid = pdfdoc.pid_of(data)
         name = Path(urllib.parse.urlparse(url).path).name or "document.pdf"
         f = store.DATA / "uploads" / f"{pid}.pdf"
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(data)
         job["finished"] = time.time()
-        if (store.pdir(pid) / "meta.json").exists():   # read before
+        if store.has(pid):   # read before
             f.unlink()
             job.update(status="moved", next=self.submit(pid, job["lang"], False)["id"])
         elif engine.where():
@@ -387,9 +400,8 @@ class Jobs:
                         office.convert(job["file"], out)
                     langs = self.superseded(job["pid"]) if job["replace"] else []
                     pdfdoc.store_pdf(job["pid"], out, pdfdoc.read_output(out), job["name"], job["tier"], replace=job["replace"])
-                    src = store.pdir(job["pid"]) / pdfdoc.kept_name(job["pid"], job["file"])   # the file itself, kept
-                    if not src.exists():
-                        src.write_bytes(Path(job["file"]).read_bytes())
+                    store.keep_original(job["pid"], Path(job["file"]).suffix.lower().lstrip("."),
+                                        Path(job["file"]).read_bytes(), only_if_missing=True)
                     shutil.rmtree(out, ignore_errors=True)
                     if Path(job["file"]).parent == store.DATA / "uploads":
                         Path(job["file"]).unlink(missing_ok=True)
@@ -430,9 +442,10 @@ def take_file(jobs, data, headers):
     if not ext:
         return {"error": "not-supported"}, 400
     pid = pdfdoc.pid_of(data, ext)
+    store.repository().prepare_import(pid)
     f = store.DATA / "uploads" / f"{pid}.{ext}"
     f.parent.mkdir(parents=True, exist_ok=True)
-    if (store.pdir(pid) / "meta.json").exists():   # this file, converted before
+    if store.has(pid):   # this file, converted before
         return {"job": jobs.submit(pid, lang, False), "via": "file"}, 200
     if not f.exists():
         f.write_bytes(data)
@@ -463,11 +476,12 @@ def take_pdf(jobs, data, headers):
     except ValueError:
         refs = []
     pid = pdfdoc.pid_of(data)
+    store.repository().prepare_import(pid)
     f = store.DATA / "uploads" / f"{pid}.pdf"
     f.parent.mkdir(parents=True, exist_ok=True)
     if not f.exists():
         f.write_bytes(data)
-    if (store.pdir(pid) / "meta.json").exists():   # this file, converted before
+    if store.has(pid):   # this file, converted before
         f.unlink()
         return {"job": jobs.submit(pid, lang, False), "via": "pdf"}, 200
     for ref in refs:
@@ -499,15 +513,26 @@ def assembled(pid, only=None):
     gone = ids.load(pid)   # (a link to a paragraph or section no longer in the text opens where it went)
     if gone["units"] or gone["sections"]:
         doc["gone"] = gone
+    doc["cloudSync"] = not store.is_local()
     return doc
 
 
 def reader_page(pid):
-    layers = store.pdir(pid) / "layers"
-    sig = tuple(sorted((f.name, f.stat().st_mtime) for f in layers.glob("*.json"))) if layers.exists() else ()
+    if store.is_local():
+        layers = store.pdir(pid) / "layers"
+        sig = tuple(sorted((f.name, f.stat().st_mtime) for f in layers.glob("*.json"))) if layers.exists() else ()
+        sig += ((build.WEB / "template.html").stat().st_mtime, library.name_of(pid))  # a changed page template, or name, re-renders too
+        gone = store.pdir(pid) / ids.FILE
+        sig += (gone.stat().st_mtime_ns if gone.exists() else 0,)
+        sig += tuple((name, (build.WEB / name).stat().st_mtime_ns) for name in STATIC)
+        hit = PAGES.get(pid)
+        if not hit or hit[0] != sig:
+            hit = (sig, build.page(assembled(pid), app=True))
+            PAGES[pid] = hit
+        return hit[1]
+    repo = store.repository()
+    sig = (repo.cache_token,) + repo.revision(pid)
     sig += ((build.WEB / "template.html").stat().st_mtime, library.name_of(pid))  # a changed page template, or name, re-renders too
-    gone = store.pdir(pid) / ids.FILE
-    sig += (gone.stat().st_mtime_ns if gone.exists() else 0,)
     sig += tuple((name, (build.WEB / name).stat().st_mtime_ns) for name in STATIC)
     hit = PAGES.get(pid)
     if not hit or hit[0] != sig:
@@ -517,9 +542,19 @@ def reader_page(pid):
 
 
 def listed():
+    if store.is_local():
+        """The papers for the list: those on disk, with when each came in and was last opened, and the citekey of each one
+        read from a Zotero item that has one."""
+        rows = library.stamp(store.papers())
+        keys = zotero.citekeys()
+        for p in rows:
+            if keys.get(p["id"]):
+                p["citekey"] = keys[p["id"]]
+        return rows
     """The papers for the list: those on disk, with when each came in and was last opened, and the citekey of each one
     read from a Zotero item that has one."""
-    rows = library.stamp(store.papers())
+    index = store.repository().list()
+    rows = library.stamp(store.papers(index), index=index)
     keys = zotero.citekeys()
     for p in rows:
         if keys.get(p["id"]):
@@ -532,7 +567,15 @@ def landing_page(jobs):
     # long for them, so it names the model in use rather than asking for one to be connected
     agents.wait_scanned(2)
     data = models_payload()
-    boot = {"papers": listed(), "folders": library.folders(), "jobs": jobs.list(), "model": data["selectedName"] or "",
+    from .cloud_storage import StorageError
+    storage_error = ""
+    try:
+        papers, folders = listed(), library.folders()
+    except StorageError as error:
+        # The settings page must remain usable when a cloud service/keyring is
+        # unavailable. This is an explicit error state, never a local fallback.
+        papers, folders, storage_error = [], {"folders": []}, str(error)
+    boot = {"cloudSync": not store.is_local(), "papers": papers, "folders": folders, "storageError": storage_error, "jobs": jobs.list(), "model": data["selectedName"] or "",
             "askName": data["askName"], "modelData": data,
             "bridge": data["bridge"], "langs": langs.natives()}
     t = build.app_assets((build.WEB / "app.html").read_text(encoding="utf-8"))
@@ -557,6 +600,13 @@ def make_handler(jobs):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", cache)
+            if 200 <= code < 300 and self.command == "POST" and (self.path.startswith("/api/notes/") or self.path == "/api/ask"):
+                from .offline_storage import OfflineBackend
+                backend = store.repository().backend
+                if isinstance(backend, OfflineBackend):
+                    status = backend.status()
+                    self.send_header("X-TextFold-Save-State", "local" if status["pending"] else "synced")
+                    self.send_header("X-TextFold-Online", "1" if status["online"] else "0")
             self.end_headers()
             try:
                 self.wfile.write(data)
@@ -596,14 +646,18 @@ def make_handler(jobs):
                     return self.send(200, page, "text/html; charset=utf-8")
                 m = re.fullmatch(r"/p/([\w.-]+)/img/([\w.-]+)", u.path)   # a paper's picture (a drawing stays inside its page)
                 if m and store.valid_id(m.group(1)):
-                    f = store.pdir(m.group(1)) / "img" / m.group(2)
-                    kind = IMAGE_TYPES.get(f.suffix.lower())
-                    if kind and f.is_file():
-                        return self.send(200, f.read_bytes(), kind, cache="max-age=86400")
+                    name = m.group(2)
+                    kind = IMAGE_TYPES.get(Path(name).suffix.lower())
+                    try:
+                        data = store.asset(m.group(1), "img/" + name) if store.has(m.group(1)) else None
+                    except FileNotFoundError:
+                        data = None
+                    if kind and data is not None:
+                        return self.send(200, data, kind, cache="max-age=86400")
                     return self.json({"error": "no such picture"}, 404)
                 m = re.fullmatch(r"/p/([\w.-]+)", u.path)
                 if m and store.valid_id(m.group(1)):
-                    if not (store.pdir(m.group(1)) / "source.html").exists():
+                    if not store.readable(m.group(1)):
                         self.send_response(302)
                         self.send_header("Location", "/")
                         self.end_headers()
@@ -621,18 +675,32 @@ def make_handler(jobs):
                         return self.send(200, f.read_bytes(), VENDOR_TYPES[f.suffix], cache="max-age=86400")
                 if u.path == "/api/papers":
                     return self.json(listed())
+                if u.path == "/api/trash":
+                    return self.json(store.repository().list_trash())
                 if u.path == "/api/folders":
                     return self.json(library.folders())
+                if u.path == "/api/storage":
+                    return self.json(store.storage_status())
+                if u.path == "/api/storage/cloud":
+                    return self.json(cloud_storage_status())
+                if u.path in ("/api/storage/sync", "/api/storage/conflicts", "/api/storage/export"):
+                    from .offline_storage import OfflineBackend
+                    backend = store.repository().backend
+                    if not isinstance(backend, OfflineBackend):
+                        return self.json(notes.conflicts() if u.path.endswith("/conflicts") else None)
+                    if u.path.endswith("/conflicts"):
+                        return self.json(backend.conflicts())
+                    if u.path.endswith("/export"):
+                        return self.send(200, backend.export_pending(), "application/zip")
+                    return self.json(backend.status())
                 if u.path == "/api/langs":
                     return self.json([{"code": code, "name": name} for code, name in langs.natives().items()])
                 if u.path == "/api/jobs":
                     return self.json(jobs.list())
-                if u.path == "/api/storage":
-                    return self.json(store.storage_status())
                 if u.path in ("/api/models", "/api/settings"):
                     return self.json(models_payload())
                 m = re.fullmatch(r"/api/pdfmap/([\w.-]+)", u.path)   # a converted PDF's paragraphs on its pages
-                if m and m.group(1).startswith("pdf-") and store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists():
+                if m and m.group(1).startswith("pdf-") and store.valid_id(m.group(1)) and store.has(m.group(1)):
                     with RELAYOUT:   # (converted before the layout was kept: found again once, in seconds)
                         try:
                             pdfdoc.relayout(m.group(1))
@@ -655,12 +723,12 @@ def make_handler(jobs):
                     except ValueError as e:
                         return self.json({"error": str(e)}, 400)
                 m = re.fullmatch(r"/api/notes/([\w.-]+)", u.path)
-                if m and store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists():
-                    return self.json(notes.read(m.group(1)))
+                if m and store.valid_id(m.group(1)) and store.has(m.group(1)):
+                    return self.json(notes.present(notes.read(m.group(1))))
                 m = re.fullmatch(r"/api/doc/([\w.-]+)", u.path)   # (a document not folded yet: its local levels, said so)
                 if m:
-                    pid, lang = m.group(1), (parse_qs(u.query).get("lang") or [None])[0]   # (none: the text's own)
-                    if not (store.valid_id(pid) and (store.pdir(pid) / "meta.json").exists() and (store.pdir(pid) / "source.html").exists()):
+                    pid, lang = m.group(1), (parse_qs(u.query).get("lang") or [None])[0]
+                    if not (store.valid_id(pid) and store.readable(pid) and store.has(pid)):
                         return self.json({"error": "no such paper"}, 404)
                     if lang is not None and lang not in langs.LANGS:
                         return self.json({"error": f"unknown language {lang}"}, 400)
@@ -668,16 +736,16 @@ def make_handler(jobs):
                 m = re.fullmatch(r"/api/ids/([\w.-]+)", u.path)   # what paragraphs' and sections' ids name now (ids.py)
                 if m:
                     pid, q = m.group(1), parse_qs(u.query)
-                    if not (store.valid_id(pid) and (store.pdir(pid) / "meta.json").exists() and (store.pdir(pid) / "source.html").exists()):
+                    if not (store.valid_id(pid) and store.readable(pid)):
                         return self.json({"error": "no such paper"}, 404)
                     asked = lambda k: [x for v in q.get(k, []) for x in v.split(",") if x][:1000]
                     return self.json(ids.lookup(pid, store.parsed(pid), asked("u"), asked("s")))
                 m = re.fullmatch(r"/api/pdf/([\w.-]+)", u.path)
-                if m and store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists():
-                    f = pdf.path(m.group(1)) if pdf.has_source(m.group(1)) else None
+                if m and store.valid_id(m.group(1)) and store.has(m.group(1)):
+                    f = pdf.read(m.group(1)) if pdf.has_source(m.group(1)) else None
                     if not f:   # with where the reader may open it, to drop it on the pane
                         return self.json({"error": "no-pdf", "open": pdf.where(m.group(1)) if pdf.has_source(m.group(1)) else None}, 404)
-                    return self.send(200, f.read_bytes(), "application/pdf", cache="max-age=86400")
+                    return self.send(200, f, "application/pdf", cache="max-age=86400")
                 if u.path == "/favicon.ico":
                     return self.send(204, b"", "image/x-icon")
                 self.json({"error": "not found"}, 404)
@@ -695,7 +763,7 @@ def make_handler(jobs):
                 size = int(self.headers.get("Content-Length") or 0)
                 m = re.fullmatch(r"/api/pdf/([\w.-]+)", u.path)
                 if m:   # a paper's PDF, dropped on the reader's pane: the file's bytes, not JSON
-                    if not (store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists()):
+                    if not (store.valid_id(m.group(1)) and store.has(m.group(1))):
                         return self.json({"error": "no such paper"}, 404)
                     if size > pdf.LIMIT:
                         return self.json({"error": "too-large"}, 413)
@@ -707,13 +775,50 @@ def make_handler(jobs):
                 if size > 12_000_000:   # a Markdown file is far smaller; this is a request gone wrong
                     return self.json({"error": "too-large"}, 413)
                 body = json.loads(self.rfile.read(size) or b"{}")
-                s = models.load_settings()
+                if u.path == "/api/storage/sync":
+                    from .offline_storage import OfflineBackend
+                    backend = store.repository().backend
+                    if not isinstance(backend, OfflineBackend):
+                        if body.get("action") == "resolve" and store.valid_id(body.get("document", "")):
+                            try:
+                                notes.resolve(body["document"], str(body.get("conflict", "")), body.get("choice"), body.get("text"))
+                                return self.json(None)
+                            except (ValueError, OSError, ConflictError) as error:
+                                return self.json({"error": str(error)}, 400)
+                        return self.json({"error": "Select cloud storage and restart first"}, 400)
+                    try:
+                        action = body.get("action", "sync")
+                        if action == "sync":
+                            reason = body.get('reason', 'manual')
+                            backend.request_sync(reason if reason in ('manual', 'online', 'focus') else 'manual')
+                        elif action in ("import", "download"):
+                            from .storage_settings import active_path
+                            backend.background(action, store.LocalDirectoryBackend(active_path(store.DATA, store.DATA)) if action == "import" else None)
+                        elif action == "clear":
+                            return self.json(backend.clear_cache())
+                        elif action == "resolve":
+                            backend.resolve(str(body.get("document", "")), str(body.get("conflict", "")), body.get("choice"), body.get("text"))
+                        else:
+                            raise ValueError("Unknown storage action")
+                        return self.json(backend.status())
+                    except (ValueError, OSError, ConflictError) as error:
+                        return self.json({"error": str(error)}, 400)
+                if u.path in ("/api/storage/cloud", "/api/storage/cloud/test"):
+                    from . import cloud_settings
+                    try:
+                        if not isinstance(body, dict):
+                            raise ValueError("Expected cloud storage settings")
+                        result = cloud_settings.test(store.HOME, body) if u.path.endswith("/test") else cloud_settings.save(store.HOME, body, store.repository().backend)
+                        return self.json(result)
+                    except (ValueError, OSError) as error:
+                        return self.json({"error": str(error)}, 400)
                 if u.path == "/api/storage":
                     try:
                         return self.json(store.schedule_storage(body.get("path"), bool(body.get("cancel")), body.get("mode", "copy")))
                     except (OSError, ValueError) as error:   # (why, in the reader's language: its code)
                         return self.json({"error": str(error), "code": getattr(error, "code", "")}, 400)
 
+                s = models.load_settings()
                 if u.path == "/api/generate":
                     lang = body.get("lang") or None   # (none: the language it is written in, its own levels)
                     if lang is not None and lang not in langs.LANGS:
@@ -757,12 +862,17 @@ def make_handler(jobs):
                     return self.json(engine.uninstall())
                 if u.path == "/api/convert":   # a stored PDF (or picture) converted again, at another tier (its levels follow)
                     pid, tier = str(body.get("paper") or ""), str(body.get("tier") or "accurate")
-                    src = pdfdoc.source_of(pid) if pid.startswith(("pdf-", "doc-")) and store.valid_id(pid) else None
-                    if not src or tier not in engine.TIERS or engine.tier_for(src, tier) != tier:
+                    original = pdfdoc.original(pid) if pid.startswith(("pdf-", "doc-")) and store.valid_id(pid) and store.has(pid) else None
+                    source = "document." + original[0] if original else None
+                    if not source or tier not in engine.TIERS or engine.tier_for(source, tier) != tier:
                         return self.json({"error": "no such PDF"}, 404)
                     if not engine.where():
                         return self.json({"error": "needs-engine"}, 409)
-                    name = json.loads(store.read_text(store.pdir(pid) / "meta.json")).get("source", {}).get("name") or "document.pdf"
+                    # A background converter needs a durable local input after this request ends.
+                    src = store.DATA / "uploads" / f"{pid}-again{Path(source).suffix}"
+                    src.parent.mkdir(parents=True, exist_ok=True)
+                    src.write_bytes(original[1])
+                    name = json.loads(store.text(pid, "meta.json")).get("source", {}).get("name") or "document.pdf"
                     return self.json(jobs.convert(pid, src, name, body.get("lang") or None, tier, replace=True))
                 if u.path == "/api/jobs/stop":
                     job = jobs.stop(body.get("id", ""))
@@ -771,6 +881,8 @@ def make_handler(jobs):
                     text, name = str(body.get("text") or ""), str(body.get("name") or "document.md")[:200]
                     if not text.strip():
                         return self.json({"error": "empty"}, 400)
+                    if body.get("id") and not store.is_local():
+                        return self.json({"error": "Original source is immutable; import changed content as a new document"}, 409)
                     if body.get("id"):   # an edited text in place of the one stored (a note folded again where it is written)
                         pid = str(body["id"])
                         if any(j["pid"] == pid and j["status"] in ("queued", "running") for j in jobs.list()):
@@ -787,10 +899,10 @@ def make_handler(jobs):
                         pid = local.import_text(text, name)
                     except ValueError:
                         return self.json({"error": "not-markdown"}, 400)
-                    return self.json({"paper": pid, "title": json.loads(store.read_text(store.pdir(pid) / "meta.json"))["title"]})
+                    return self.json({"paper": pid, "title": json.loads(store.text(pid, "meta.json"))["title"]})
                 if u.path == "/api/export":   # the paper as one file, saved by the reader for themself
                     pid, lang = str(body.get("paper") or ""), str(body.get("lang") or "")
-                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
+                    if not store.valid_id(pid) or not store.has(pid):
                         return self.json({"error": "no such paper"}, 404)
                     lang = lang or store.text_lang(pid)
                     kinds = {k for k in body.get("kinds") or [] if k in ("hl", "note", "ask")}
@@ -798,9 +910,9 @@ def make_handler(jobs):
                     chosen = [n for n in notes.read(pid)["notes"] if notes.kind(n) in kinds]
                     saved = {"notes": chosen, "saved": uuid.uuid4().hex[:12], "lang": lang}
                     if body.get("pdf") and pdf.has_source(pid):   # the original beside it: the file, and PDF.js to show it
-                        f = pdf.path(pid)
+                        f = pdf.read(pid)
                         if f:
-                            saved["pdf"] = base64.b64encode(f.read_bytes()).decode()
+                            saved["pdf"] = base64.b64encode(f).decode()
                             saved["pdfjs"] = {"lib": (build.VENDOR / "pdfjs" / "pdf.min.mjs").read_text(encoding="utf-8"),
                                               "worker": (build.VENDOR / "pdfjs" / "pdf.worker.min.mjs").read_text(encoding="utf-8")}
                             if pid.startswith("pdf-"):   # a converted PDF: its paragraphs' places on the pages
@@ -813,7 +925,7 @@ def make_handler(jobs):
                     html = build.page(doc, app=False, saved=saved)
                     return self.send(200, html, "text/html; charset=utf-8")
                 m = re.fullmatch(r"/api/pdf-figures/([\w.-]+)", u.path)   # the button under a drawing set out of place
-                if m and store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists():
+                if m and store.valid_id(m.group(1)) and store.has(m.group(1)):
                     if body.get("back"):
                         pdffigs.back(m.group(1))
                         PAGES.pop(m.group(1), None)
@@ -825,11 +937,11 @@ def make_handler(jobs):
                     PAGES.pop(m.group(1), None)
                     return self.json({"cut": n})
                 m = re.fullmatch(r"/api/notes/([\w.-]+)", u.path)
-                if m and store.valid_id(m.group(1)) and (store.pdir(m.group(1)) / "meta.json").exists():
+                if m and store.valid_id(m.group(1)) and store.has(m.group(1)):
                     try:
                         if body.get("op") == "delete":
-                            return self.json(notes.delete(m.group(1), str(body.get("id", ""))))
-                        return self.json(notes.put(m.group(1), body.get("note")))
+                            return self.json(notes.present(notes.delete(m.group(1), str(body.get("id", "")), body.get("base"))))
+                        return self.json(notes.present(notes.put(m.group(1), body.get("note"))))
                     except ValueError as e:
                         return self.json({"error": str(e)}, 400)
                 if u.path == "/api/bridge/start":
@@ -843,7 +955,7 @@ def make_handler(jobs):
                 if u.path == "/api/papers/delete":
                     many = isinstance(body.get("papers"), list)
                     pids = [str(p) for p in body["papers"]] if many else [str(body.get("paper", ""))]
-                    there = [p for p in dict.fromkeys(pids) if store.valid_id(p) and (store.pdir(p) / "meta.json").exists()]
+                    there = [p for p in dict.fromkeys(pids) if store.valid_id(p) and store.has(p)]
                     live = {j["pid"] for j in jobs.list() if j["status"] in ("queued", "running")}
                     if not many and not there:
                         return self.json({"error": "no such paper"}, 404)
@@ -860,14 +972,23 @@ def make_handler(jobs):
                     pids = body.get("papers") if isinstance(body.get("papers"), list) else []
                     restored = []
                     for pid in dict.fromkeys(str(p) for p in pids):
-                        kept = store.untrash(pid)
+                        kept = store.untrash(pid, (body.get("revisions") or {}).get(pid))
                         if kept is not None:
                             library.remember(pid, kept)
                             restored.append(pid)
                     return self.json({"papers": listed(), "folders": library.folders(), "restored": restored})
+                if u.path == "/api/trash/delete":
+                    pid = str(body.get("paper", ""))
+                    if not store.valid_id(pid):
+                        return self.json({"error": "Invalid document id"}, 400)
+                    if any(j["pid"] == pid and j["status"] in ("queued", "running") for j in jobs.list()):
+                        return self.json({"error": "busy"}, 409)
+                    if not store.repository().delete_trashed(pid, body.get("revision")):
+                        return self.json({"error": "No such document in trash"}, 404)
+                    return self.json({"deleted": pid})
                 if u.path == "/api/papers/name":
                     pid = str(body.get("paper", ""))
-                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
+                    if not store.valid_id(pid) or not store.has(pid):
                         return self.json({"error": "no such paper"}, 404)
                     library.name(pid, body.get("name"))
                     return self.json(listed())
@@ -878,15 +999,18 @@ def make_handler(jobs):
                         return self.json({"error": str(e)}, 400)
                 if u.path == "/api/ask/stop":
                     notes.stop(str(body.get("req") or "")[:40])
+                    if store.valid_id(body.get("paper", "")) and body.get("id"):
+                        notes.cancel_question(body["paper"], body["id"], str(body.get("req") or "")[:40])
+                        return self.json(notes.present(notes.read(body["paper"])))
                     return self.json({"ok": True})
                 if u.path == "/api/ask":
                     pid = str(body.get("paper", ""))
-                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
+                    if not store.valid_id(pid) or not store.has(pid):
                         return self.json({"error": "no such paper"}, 404)
                     try:
                         return self.json(notes.ask(pid, str(body.get("id", "")), str(body.get("question", "")).strip()[:2000],
                                                    models.ask_spec(tools=bool(body.get("tools"))), ui=str(body.get("ui") or ""),
-                                                   req=str(body.get("req") or "")[:40] or None))
+                                                   req=str(body.get("req") or "")[:40] or None, parent=body.get("parent")))
                     except notes.Stopped:
                         return self.json({"error": "stopped"}, 409)
                     except ValueError as e:
@@ -974,6 +1098,8 @@ def make_handler(jobs):
                     except Exception as e:
                         return self.json({"ok": False, "error": str(e)[:600]})
                 self.json({"error": "not found"}, 404)
+            except ConflictError as e:
+                self.json({"error": str(e)}, 409)
             except Exception as e:
                 self.json({"error": str(e)}, 500)
 
@@ -1023,6 +1149,10 @@ def serve(port=3017):
     if os.name == "nt":
         _quiet_children()
     store.initialize_storage(log=lambda line: print(line, flush=True))   # (a library moved in Settings: copied now, once)
+    from .offline_storage import OfflineBackend
+    backend = store.repository().backend
+    if isinstance(backend, OfflineBackend):
+        backend.start()
     jobs = Jobs()
     # look for the agents on this computer while the server comes up, and erase what was deleted 30 days ago
     threading.Thread(target=agents.scan, kwargs={"log": print}, daemon=True).start()
@@ -1045,4 +1175,6 @@ def serve(port=3017):
     except KeyboardInterrupt:
         pass
     finally:
+        if isinstance(backend, OfflineBackend):
+            backend.close()
         withdraw(f)
