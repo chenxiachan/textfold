@@ -38,6 +38,8 @@ dependencies = [
 [project.optional-dependencies]
 # only for the Anthropic API (Claude Code, Codex, Pi and OpenAI-compatible providers need nothing more)
 anthropic = ["anthropic"]
+# for providers named through LiteLLM (LITELLM_MODELS): Bedrock, Vertex AI, Azure and others; bounded to the tested range
+litellm = ["litellm>=1.97.0,<1.106.0"]
 
 [project.scripts]
 textfold = "textfold.__main__:main"

@@ -5,6 +5,7 @@
          pi           `pi -p --mode json`                     (JSON asked for in the prompt)
   api    anthropic    the official SDK (`pip install anthropic`), structured output
          openai       any OpenAI-compatible endpoint (llm_openai.py), JSON mode
+         litellm      the LiteLLM SDK (`pip install 'textfold[litellm]'`, llm_litellm.py): Bedrock, Vertex AI, Azure, ...
 
 Replies are cached on disk by a hash of everything that shapes them, so a rebuild costs nothing until
 the prompt, the schema, the model or its effort changes. `force` skips the cache read: that is what
@@ -149,6 +150,9 @@ def _once(prompt, schema, spec, timeout, system):
         return agents.run_pi(spec["model"], prompt, schema, system, effort, timeout, tools)
     if spec["protocol"] == "anthropic":
         return _anthropic(prompt, schema, spec, timeout, system)
+    if spec["protocol"] == "litellm":
+        from .llm_litellm import call as litellm_call
+        return litellm_call(prompt, schema, spec, system, timeout)
     from .llm_openai import call as openai_call
     return openai_call(prompt, schema, spec, system, timeout)
 
