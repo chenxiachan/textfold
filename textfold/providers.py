@@ -6,7 +6,8 @@ Two sources, as in ThoughtDAG:
         and the reader picks which models to offer
 One difference: ThoughtDAG keeps UI keys in the browser and sends them with each request; here generation
 runs in the background on the server, so they are kept in ~/.textfold/settings.json (mode 600).
-Every provider except Anthropic is spoken to through the OpenAI-compatible protocol (llm_openai.py).
+Every provider except Anthropic is spoken to through the OpenAI-compatible protocol (llm_openai.py); LiteLLM's models,
+named in LITELLM_MODELS, through its SDK (llm_litellm.py).
 """
 import json
 import os
@@ -39,6 +40,10 @@ ENV_PROVIDERS = [
      "base": "https://api.moonshot.cn/v1", "models": ["kimi-k2-turbo-preview", "kimi-latest"]},
     {"key": "openrouter", "name": "OpenRouter", "env": ["OPENROUTER_API_KEY"], "list": "OPENROUTER_MODELS", "base": "https://openrouter.ai/api/v1",
      "models": ["openrouter/auto"]},
+    # LiteLLM reaches providers that are not OpenAI-compatible (Bedrock, Vertex AI, Azure, ...) by "provider/model";
+    # each keeps its own credentials, so it is listed only when LITELLM_MODELS names the models to offer
+    {"key": "litellm", "name": "LiteLLM", "env": [], "list": "LITELLM_MODELS", "base_env": "LITELLM_API_BASE",
+     "protocol": "litellm", "models": [], "listed": True},
     # Ollama needs no key; ThoughtDAG registers it only when OLLAMA_MODELS is set, here a running Ollama is also asked
     {"key": "ollama", "name": "Ollama", "env": [], "list": "OLLAMA_MODELS", "base_env": "OLLAMA_BASE_URL",
      "base": "http://localhost:11434", "suffix": "/v1", "models": [], "nokey": True},
@@ -112,6 +117,9 @@ def env_providers(use_thoughtdag=True, ollama_live=None):
         ids = _ids(env, p)
         if p["key"] == "ollama":
             ids = ids or list(ollama_live or [])
+            if not ids:
+                continue
+        elif p.get("listed"):
             if not ids:
                 continue
         elif not key:
