@@ -5,7 +5,7 @@
   python -m textfold notes.md [--lang zh] ...           the same for a Markdown file
   python -m textfold export <arxiv id>                   one self-contained HTML file in out/<id>/
   python3 -m textfold get <link or file> [--level topic] [--section 3] [--json]   a document at one level (for a person or an agent)
-  python3 -m textfold engine status | install | remove              the PDF engine (MinerU, about 3.4 GB)
+  python3 -m textfold engine status | install [folder] | remove     the PDF engine (MinerU, about 3.4 GB)
   python3 -m textfold adapt <url> [--snapshot page.html] [--try recipe.json [--keep]]   a web page read with a recipe
   python3 -m textfold capture install                                the browser's button (extension/) reaches TextFold
 """
@@ -96,11 +96,20 @@ def engine_cmd(args):
     from . import engine
     what = args[0] if args else "status"
     if what == "install":
+        if len(args) > 1:   # a folder of the reader's
+            if engine.where():
+                _say(f"The PDF engine is installed in {engine.where()}: remove it first")
+                return 2
+            try:
+                engine.choose(args[1])
+            except ValueError as error:
+                _say(str(error))
+                return 2
         engine.install(progress=lambda s, d, t: _say(f"  {s} ({d}/{t})"), log=_say)
     elif what == "remove":
         engine.uninstall()
     elif what != "status":
-        _say("python3 -m textfold engine status | install | remove")
+        _say("python3 -m textfold engine status | install [folder] | remove")
         return 2
     st = engine.status()
     print(f"PDF engine: {'installed' if st['installed'] else 'not installed'} (MinerU {st['version']})"

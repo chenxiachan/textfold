@@ -749,7 +749,14 @@ def make_handler(jobs):
                         zotero.link(lib, key, pid, got["title"], got["record"])
                         zotero.apply(pid)   # (read at once, or read before: its record now; else once converted)
                     return self.json({**reply, "name": got["name"]}, code)
-                if u.path == "/api/engine/install":
+                if u.path == "/api/engine/install":   # (with a path: into that folder, chosen in Settings)
+                    if body.get("path"):
+                        if jobs._same(kind="install") or engine.where():
+                            return self.json({"error": "busy"}, 409)
+                        try:
+                            engine.choose(body["path"])
+                        except ValueError as error:   # (why, in the reader's language: its code)
+                            return self.json({"error": str(error), "code": getattr(error, "code", "")}, 400)
                     return self.json(jobs.install_engine())
                 if u.path == "/api/engine/remove":
                     if any(j["kind"] in ("install", "convert") and j["status"] in ("queued", "running") for j in jobs.items.values()):

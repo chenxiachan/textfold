@@ -330,8 +330,11 @@ arXiv's PDF). While the engine is not installed, a PDF that has its words in it 
 (`pdftext.py`): pdf-inspector's Markdown, page by page, into the engine's blocks, and each figure found by its caption
 (the drawings and pictures above or below it, up to the prose around them) and cut from its page with pypdfium2
 (`engine.crop_here`). A scanned PDF, and every PDF once the engine is there, goes to
-the PDF engine (`engine.py`): MinerU 4, pinned, in `<app data>/engine` (a PaperFold install in its old place is used
-there), installed from the landing, the settings or `python3 -m textfold engine install`. Its command line only (`mineru-kit
+the PDF engine (`engine.py`): MinerU 4, pinned, in `engine/` beside the library (`<app data>/engine`, or in the folder
+the library was moved to) or in an empty folder the reader chooses in Settings (`engine install <folder>`), installed
+from the landing, the settings or `python3 -m textfold engine install`. The folder it was installed in is kept in the
+settings (`engine_path`) and stays when the library moves, since its Python cannot move; removing it removes the folder
+(a PaperFold install in its old place is used too). Its command line only (`mineru-kit
 parse --format zip`), never the `mineru` document library. Fast is MinerU's flash tier (seconds, no model; formulas as
 pictures); accurate is advanced (a vision model, several seconds a page), with `--disable-image-analysis`.
 `pdfdoc.py` turns `structured_content.json` into the document: running heads and page numbers out, the title from the

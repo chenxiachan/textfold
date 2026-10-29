@@ -1504,6 +1504,7 @@
     const tests = {};         // the last connection test of each model: the levels' (gen), the questions' (ask)
     let bridgeStarting = false, bridgeState = null;
     let storageDraft = null, storageMode = null, storageBusy = false, storageError = null;   // ({code, message}: why a folder was refused)
+    let engineDraft = null, engineError = null;   // the PDF engine's folder, typed or chosen, and why it was refused
     const dlg = h('dialog', 'settings prefs'); document.body.append(dlg);
     dlg.addEventListener('close', () => { settingsOpen = false; });
     const T = () => t();
@@ -1676,10 +1677,26 @@
         : `<div class="st-item"><div class="st-main st-meta st-desc">${esc(t.engine_off)}</div>${act}</div>`;
       const tier = `<div class="st-item"><label class="st-main" for="st-tier"><b>${esc(t.tier)}</b></label><select class="st-tiersel" id="st-tier">${['fast', 'accurate'].map((k) =>
         `<option value="${k}"${(data.pdfTier || 'fast') === k ? ' selected' : ''}>${esc(t['tier_' + k])}</option>`).join('')}</select></div>`;
-      box.innerHTML = `<h3>${esc(t.engine)}</h3><div class="st-list">${state}${tier}</div>`;
+      // not installed: the folder it goes into (textfold/engine.py target), beside the library unless the reader chooses
+      // an empty one (in the same system dialog as the library's folder)
+      const why = engineError ? t[`storage_err_${engineError.code}`] || engineError.message : '';
+      const folder = job || e.installed ? '' : `<div class="st-form"><label>${esc(t.storage_destination)}<div class="st-row" style="margin:0"><input class="st-engine-path" style="flex:1;min-width:0" value="${esc(engineDraft ?? e.path ?? '')}" spellcheck="false">${window.desktop?.chooseLibraryFolder ? `<button type="button" class="st-btn st-engine-pick">${esc(t.storage_choose)}</button>` : ''}</div></label>
+        <p class="st-note">${esc(t.engine_where)}</p>${why ? `<p class="st-note warn" role="alert">${esc(why)}</p>` : ''}</div>`;
+      box.innerHTML = `<h3>${esc(t.engine)}</h3><div class="st-list">${state}${folder}${tier}</div>`;
       box.querySelector('.st-tiersel').onchange = async (ev) => { data = await api('/api/settings', { pdf_tier: ev.target.value }); renderEngine(); };
       const inst = box.querySelector('.st-engine-in');
-      if (inst) inst.onclick = async () => { inst.disabled = true; watch(await api('/api/engine/install', {}), () => {}); follow(); };
+      if (inst) inst.onclick = async () => {
+        inst.disabled = true; engineError = null;
+        const path = (engineDraft ?? '').trim();
+        try { watch(await api('/api/engine/install', path && path !== e.path ? { path } : {}), () => {}); engineDraft = null; follow(); }
+        catch (x) { engineError = { code: x.code, message: errText(x.message) }; renderEngine(); }
+      };
+      const where = box.querySelector('.st-engine-path'), pick = box.querySelector('.st-engine-pick');
+      if (where) where.oninput = () => { engineDraft = where.value; };
+      if (pick) pick.onclick = async () => {
+        const path = await window.desktop.chooseLibraryFolder();
+        if (path) { engineDraft = path; engineError = null; renderEngine(); }
+      };
       const rm = box.querySelector('.st-engine-rm');
       if (rm) rm.onclick = async () => {
         if (!confirm(t.engine_remove_q.replace('{size}', gb(e.bytes)))) return;

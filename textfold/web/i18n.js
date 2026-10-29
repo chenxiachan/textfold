@@ -788,6 +788,22 @@ window.DR_I18N = (() => {
     hi: { storage_title: "लाइब्रेरी का फ़ोल्डर", storage_current: "आपके दस्तावेज़, नोट और हाइलाइट यहाँ हैं:", storage_action: "दूसरा फ़ोल्डर इस्तेमाल करें", storage_copy: "लाइब्रेरी को किसी ख़ाली फ़ोल्डर में कॉपी करके वहीं इस्तेमाल करें", storage_existing: "किसी फ़ोल्डर में पहले से मौजूद लाइब्रेरी खोलें", storage_destination: "फ़ोल्डर", storage_choose: "चुनें…", storage_explain: "TextFold अगली बार शुरू होने पर बदल जाएगा। कॉपी हर फ़ाइल के साथ जाँची जाती है, और यहाँ की लाइब्रेरी जैसी है वैसी रहती है। जो लाइब्रेरी आप खोलते हैं, वह जैसी है वैसी ही इस्तेमाल होती है, उसमें कुछ कॉपी नहीं होता। ऐप और Python पैकेज, दोनों अपना-अपना चुनाव याद रखते हैं।", storage_pending: "अगली शुरुआत से:", storage_cancel: "यहीं रहने दें", storage_save: "अगली शुरुआत पर बदलें", storage_saving: "सहेजा जा रहा है…", storage_failed: "लाइब्रेरी अपनी जगह पर ही है: {e}", storage_err_path: "फ़ोल्डर का पूरा पाथ लिखें।", storage_err_inside: "नया फ़ोल्डर लाइब्रेरी के अंदर नहीं हो सकता, और न ही उसे अपने अंदर रख सकता है।", storage_err_not_empty: "कोई ख़ाली फ़ोल्डर चुनें: किसी फ़ोल्डर में पहले से मौजूद कुछ भी ओवरराइट नहीं होता।", storage_err_not_library: "इस फ़ोल्डर में TextFold की लाइब्रेरी (papers फ़ोल्डर) नहीं है।", storage_err_links: "इस लाइब्रेरी में दूसरे फ़ोल्डरों के लिंक हैं, और TextFold लाइब्रेरी कॉपी करते या खोलते समय उनका अनुसरण नहीं करता।" },
   };
   for (const [code, words] of Object.entries(STORAGE)) Object.assign(S[code], words);
+  // the PDF engine's folder, in Settings (app.js renderEngine; textfold/engine.py choose), refused in the library's words
+  const ENGINE = {
+    en: { engine_where: "It goes beside your library unless you choose another folder, an empty one. To move it once installed, remove it and install it again." },
+    zh: { engine_where: "默认装在文献库旁边，也可以选一个空文件夹。装好后要换位置，先删除再重新安装。" },
+    "zh-Hant": { engine_where: "預設裝在文獻庫旁邊，也可以選一個空資料夾。裝好後要換位置，先刪除再重新安裝。" },
+    ja: { engine_where: "既定ではライブラリの隣に入ります。空のフォルダを選ぶこともできます。インストール後に場所を変えるには、削除してからもう一度インストールしてください。" },
+    ko: { engine_where: "기본적으로 라이브러리 옆에 설치됩니다. 빈 폴더를 골라도 됩니다. 설치한 뒤 위치를 바꾸려면 삭제하고 다시 설치하세요." },
+    es: { engine_where: "Se instala junto a tu biblioteca, salvo que elijas otra carpeta vacía. Para moverlo una vez instalado, quítalo e instálalo de nuevo." },
+    fr: { engine_where: "Il s’installe à côté de votre bibliothèque, sauf si vous choisissez un autre dossier, vide. Pour le déplacer une fois installé, supprimez-le puis réinstallez-le." },
+    de: { engine_where: "Es wird neben deiner Bibliothek installiert, außer du wählst einen anderen, leeren Ordner. Um es nach der Installation zu verschieben, entferne es und installiere es neu." },
+    pt: { engine_where: "Ele é instalado ao lado da sua biblioteca, a menos que você escolha outra pasta, vazia. Para movê-lo depois de instalado, remova-o e instale de novo." },
+    it: { engine_where: "Si installa accanto alla tua libreria, a meno che tu non scelga un’altra cartella, vuota. Per spostarlo dopo l’installazione, rimuovilo e installalo di nuovo." },
+    ru: { engine_where: "Он устанавливается рядом с библиотекой, если вы не выберете другую, пустую папку. Чтобы перенести его после установки, удалите его и установите заново." },
+    hi: { engine_where: "यह आपकी लाइब्रेरी के पास इंस्टॉल होता है, जब तक आप कोई दूसरा खाली फ़ोल्डर न चुनें। इंस्टॉल होने के बाद जगह बदलनी हो तो इसे हटाकर फिर से इंस्टॉल करें।" },
+  };
+  for (const [code, words] of Object.entries(ENGINE)) Object.assign(S[code], words);
   // find in the text (reader.js, ⌘F): its bar (English with the rest, above)
   const FIND = {
     zh: { find_ph: "在文中查找", find_n: "{i}/{n}", find_none: "没有找到", find_prev: "上一个（⇧Enter）", find_next: "下一个（Enter）", find_close: "关闭（Esc）" },

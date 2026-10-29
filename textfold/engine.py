@@ -1,5 +1,6 @@
-"""The PDF engine: MinerU, pinned, in a Python of its own under the system's folder for app data (engine/ beside the
-papers of an installed TextFold and the desktop app's), installed when the reader asks for it and removed the same way.
+"""The PDF engine: MinerU, pinned, in a Python of its own in engine/ beside the library (in the system's folder for app
+data, or the folder the library was moved to), or in a folder the reader chooses, installed when the reader asks for it
+and removed the same way.
 Nothing of it goes into TextFold's own Python: it is about 3.4 GB (torch, and 2 GB of models) and needs Python 3.10+.
 Besides PDFs it reads Word, PowerPoint, Excel, OpenDocument, EPUB and HTML files and pictures (FILES).
 
@@ -50,7 +51,40 @@ class Stopped(Exception):
 
 
 def home():
-    return store.app_data() / "engine"
+    """Where a new engine goes unless the reader chooses a folder: beside the library, in the folder it was moved to
+    (Settings), or else in the system's folder for app data (beside the library that stays there, or a clone's)."""
+    root = store.library_root()
+    return root / "engine" if root != Path(store.DATA).resolve() else store.app_data() / "engine"
+
+
+def target():
+    """The folder the engine is, or will be, installed in: the one recorded (chosen, or where it was installed: it stays
+    there when the library moves, since its Python cannot move), else home()."""
+    from . import models
+    chosen = models.load_settings().get("engine_path")
+    return Path(chosen) if chosen else home()
+
+
+def _record(folder):
+    from . import models
+    s = models.load_settings()
+    s["engine_path"] = str(folder) if folder else None
+    models.save_settings(s)
+
+
+def choose(folder):
+    """The folder the reader chose for the engine (Settings, the command line): a full path, and empty or not there yet,
+    or the one chosen before (an install that did not finish), or an engine's own (its MARK). Removing the engine removes
+    its folder, so a folder with anything else in it is refused (in the codes of the library's folder: storage_settings)."""
+    from .storage_settings import Refused
+    path = Path(str(folder or "").strip()).expanduser()
+    if not path.is_absolute():
+        raise Refused("path", "Enter an absolute folder path")
+    path = path.resolve()
+    if path.exists() and path != target().resolve() and not (path / MARK).exists() and (not path.is_dir() or any(path.iterdir())):
+        raise Refused("not_empty", "Choose an empty folder: removing the engine removes its folder")
+    _record(path)
+    return path
 
 
 def legacy():
@@ -71,8 +105,8 @@ def _ready(e):
 
 
 def where():
-    """The installed engine's folder, or None."""
-    return next((e for e in (home(), legacy()) if _ready(e)), None)
+    """The installed engine's folder, or None: the one recorded, or one installed before a folder was recorded."""
+    return next((e for e in (target(), store.app_data() / "engine", legacy()) if _ready(e)), None)
 
 
 def _env(e):
@@ -97,7 +131,7 @@ def _du(path):
 
 def status():
     e = where()
-    out = {"installed": bool(e), "path": str(e or home()), "version": VERSION, "tiers": list(TIERS),
+    out = {"installed": bool(e), "path": str(e or target()), "version": VERSION, "tiers": list(TIERS),
            "supported": sys.platform in ("darwin", "linux", "win32"), "legacy": bool(e and e == legacy())}
     if e:
         key = (str(e), (e / "venv").stat().st_mtime)
@@ -160,9 +194,10 @@ def _uv(e, log, stop):
 
 
 def install(progress=lambda *a: None, log=lambda *a: None, stop=None):
-    """MinerU and its models into home(): about 20 minutes and 3.4 GB. An interrupted install starts again from the
-    step it stopped at (each step is idempotent)."""
-    e = home()
+    """MinerU and its models into target(): about 20 minutes and 3.4 GB. An interrupted install starts again from the
+    step it stopped at (each step is idempotent), in the same folder."""
+    e = target()
+    _record(e)
     e.mkdir(parents=True, exist_ok=True)
     env = _env(e)
     steps = 4
@@ -182,9 +217,10 @@ def install(progress=lambda *a: None, log=lambda *a: None, stop=None):
 
 
 def uninstall():
-    e = where() or (home() if home().exists() else None)
+    e = where() or (target() if target().exists() else None)
     if e:
         shutil.rmtree(e)
+    _record(None)   # (the next one goes beside the library again, or where the reader chooses)
     _size.clear()
     return status()
 
