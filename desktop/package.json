@@ -1,7 +1,7 @@
 {
   "name": "textfold-desktop",
   "private": true,
-  "version": "0.10.40",
+  "version": "0.10.41",
   "description": "TextFold as an app: the local server and the reader in one window",
   "license": "Apache-2.0",
   "author": "Xia Chen",
