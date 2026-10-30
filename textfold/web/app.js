@@ -1577,8 +1577,8 @@
         ${agentForm ? customAgentForm() : `<button type="button" class="st-addrow ca-add"><span aria-hidden="true">＋</span>${esc(t.ca_add)}</button>`}</div>`;
     }
 
-    // a custom agent: its command is all the reader must write. Detect runs it, says what it found (its version, which
-    // agent it runs as) and lists that agent's models to tick; models it cannot list are written in by hand.
+    // a custom agent: its command, and which agent it runs as, chosen by the reader. Detect runs it, says what it found (its
+    // version) and lists that agent's models to tick; models it cannot list are written in by hand.
     const caName = (command) => { const w = (command || '').trim().split(/\s+/)[0] || ''; const n = w.split(/[\\/]/).pop().replace(/\.(exe|cmd|bat)$/i, ''); return n ? n[0].toUpperCase() + n.slice(1) : ''; };
     const caManual = (f) => (f.manual || '').split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
     const caModels = (f) => {   // the ticked ones as listed (their names and levels), then the written ones not among them
@@ -1609,7 +1609,7 @@
       if (!f || !f.command.trim()) return;
       f.busy = true; f.err = ''; f.version = ''; render();
       try {
-        const r = await api('/api/agents/probe', { command: f.command, protocol: f.chosen ? f.protocol : null });
+        const r = await api('/api/agents/probe', { command: f.command, protocol: f.protocol || null });
         if (agentForm !== f) return;
         f.version = r.version || ''; f.protocol = r.protocol || f.protocol; f.found = r.models || []; f.err = r.error || (r.protocol ? '' : T().ca_need_proto);
         const keep = saved || f.picked;
@@ -1829,7 +1829,7 @@
       dlg.querySelectorAll('.ca-edit').forEach((b) => {
         b.onclick = () => {
           const a = data.customAgents.find((x) => x.key === b.dataset.key);
-          agentForm = { key: a.key, command: a.command, protocol: a.protocol, chosen: true, name: a.name, found: null, picked: [...a.models], manual: a.models.join(', ') };
+          agentForm = { key: a.key, command: a.command, protocol: a.protocol, name: a.name, found: null, picked: [...a.models], manual: a.models.join(', ') };
           detectAgent([...a.models]);
         };
       });
@@ -1840,7 +1840,7 @@
         cmd.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); detectAgent(); } };
         nm.oninput = () => { f.name = nm.value; };
         man.oninput = () => { f.manual = man.value; ready(); };
-        proto.onchange = () => { f.protocol = proto.value; f.chosen = !!proto.value; if (f.protocol && f.command.trim()) detectAgent(); else ready(); };
+        proto.onchange = () => { f.protocol = proto.value; if (f.protocol && f.command.trim()) detectAgent(); else ready(); };
         const pick = q('.ca-form .st-pick');
         if (pick) pick.onchange = () => { f.picked = [...pick.querySelectorAll('input:checked')].map((i) => i.value); ready(); };
         q('.ca-detect').onclick = () => detectAgent();

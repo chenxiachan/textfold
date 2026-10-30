@@ -674,30 +674,10 @@ def command_of(command):
     return ([*argv(path), *words[1:]], path) if path else None
 
 
-def guess_protocol(command, version=""):
-    """Which agent a command speaks as, where it says so: in its --version (Claude Code's ends "(Claude Code)", Codex's
-    starts "codex-cli"), else in a word of the command (`mirasim claude`); None when neither does."""
-    v = (version or "").lower()
-    if "claude code" in v:
-        return "claude-code"
-    if "codex" in v:
-        return "codex"
-    try:
-        words = shlex.split(command or "", posix=not WIN)
-    except ValueError:
-        words = (command or "").split()
-    names = {"claude": "claude-code", "codex": "codex", "pi": "pi"}
-    for w in reversed(words):   # (the last first: `mirasim claude` speaks as claude, whatever mirasim is)
-        name = Path(w.strip('"')).name.split(".")[0].lower()
-        if name in names:
-            return names[name]
-    return None
-
-
 def probe_custom(command, protocol=None):
-    """What a custom agent's command gives: its program, its version, the agent it speaks as (the one asked for, else
-    guess_protocol) and that agent's models as it lists them, asked the way that agent is asked. A list it cannot give
-    is an error beside the rest: the reader then writes the models in."""
+    """What a custom agent's command gives: its program, its version, and the models of the agent it speaks as (the one
+    the reader chose; none chosen, none yet) as that agent lists them, asked the way that agent is asked. A list it
+    cannot give is an error beside the rest: the reader then writes the models in."""
     found = command_of(command)
     if not found:
         raise RuntimeError(f"{(command or '').split()[0] if (command or '').split() else 'The command'} was not found on this computer")
@@ -709,7 +689,7 @@ def probe_custom(command, protocol=None):
         version = (text.splitlines() or [""])[0][:80] or None
     except Exception as e:
         error = str(e)[:200]
-    protocol = protocol if protocol in PROTOCOLS else guess_protocol(command, version)
+    protocol = protocol if protocol in PROTOCOLS else None
     models = []
     if protocol:
         try:

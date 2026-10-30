@@ -138,36 +138,33 @@ class Command(Fake):
             self.assertEqual(agents.command_of("mirasim claude")[0], ["node.exe", r"C:\npm\mirasim.js", "claude"])
             argv.assert_called_once_with(r"C:\npm\mirasim.cmd")
 
-    def test_which_agent_it_speaks_as(self):
-        self.assertEqual(agents.guess_protocol("anything", "2.1.304 (Claude Code)"), "claude-code")
-        self.assertEqual(agents.guess_protocol("anything", "codex-cli 0.50.0"), "codex")
-        self.assertEqual(agents.guess_protocol("mirasim claude", "mirasim 0.0.584"), "claude-code")
-        self.assertEqual(agents.guess_protocol("/opt/x/bin/pi.cmd --mode x", ""), "pi")
-        self.assertEqual(agents.guess_protocol("router codex", None), "codex")
-        self.assertIsNone(agents.guess_protocol("mystery run", "1.0"))
-
 
 class Probe(Fake):
     def test_claude_code(self):
-        r = agents.probe_custom("wrap claude")
+        r = agents.probe_custom("wrap claude", "claude-code")
         self.assertEqual((r["protocol"], r["version"], r["error"]), ("claude-code", "2.1.304 (Claude Code)", None))
         self.assertEqual([m["id"] for m in r["models"]], ["fable", "opus", "sonnet", "haiku"])
         self.assertEqual(r["models"][2], {"id": "sonnet", "name": "Sonnet", "efforts": ["off", "low", "medium", "high"]})
 
     def test_codex(self):
-        r = agents.probe_custom("wrap codex")
+        r = agents.probe_custom("wrap codex", "codex")
         self.assertEqual((r["protocol"], r["models"]), ("codex", [{"id": "gpt-5.5", "name": "GPT-5.5", "efforts": ["low", "high"]}]))
 
     def test_pi(self):
-        r = agents.probe_custom("wrap pi")
+        r = agents.probe_custom("wrap pi", "pi")
         self.assertEqual((r["protocol"], r["models"]), ("pi", [{"id": "moonshot/kimi-k2", "name": "Kimi K2", "efforts": ["off", "low", "high"]}]))
 
-    def test_the_one_asked_for_wins(self):
+    def test_the_one_chosen_wins(self):
         self.assertEqual(agents.probe_custom("wrap claude", "pi")["protocol"], "pi")
+
+    def test_none_chosen_no_models_yet(self):
+        """Which agent it runs as is the reader's to say, not guessed from its --version or a word of its command."""
+        r = agents.probe_custom("wrap claude")
+        self.assertEqual((r["protocol"], r["models"], r["version"]), (None, [], "2.1.304 (Claude Code)"))
 
     def test_a_list_it_cannot_give(self):
         with mock.patch.dict(os.environ, {"FAKE_BROKEN_LIST": "1"}):
-            r = agents.probe_custom("wrap codex")
+            r = agents.probe_custom("wrap codex", "codex")
         self.assertEqual((r["protocol"], r["models"]), ("codex", []))
         self.assertIn("no list today", r["error"])
 
@@ -322,7 +319,7 @@ class Routes(unittest.TestCase):
         self.assertEqual(self.call("/api/agents/save", {"name": "X", "command": "x", "protocol": "gemini", "models": ["a"]})[0], 400)
 
     def test_probe(self):
-        code, r = self.call("/api/agents/probe", {"command": f"{self.wrap} claude"})
+        code, r = self.call("/api/agents/probe", {"command": f"{self.wrap} claude", "protocol": "claude-code"})
         self.assertEqual((code, r["protocol"], len(r["models"])), (200, "claude-code", 4), r)
         code, r = self.call("/api/agents/probe", {"command": "nowhere claude"})
         self.assertEqual(code, 400)
