@@ -537,3 +537,4 @@ dialog.settings.zlib { width: min(980px, calc(100vw - 32px)); }
 .st .zl-go.primary { border: 0; color: var(--on-btn); background: var(--btn); }
 .zl-no { flex: none; font-size: 12px; color: var(--faint); }
 @media (max-width: 720px) { .zl-body { grid-template-columns: 1fr; height: auto; } .zl-tree { max-height: 30vh; } .zl-items { max-height: 50vh; } }
+.ca-form .st-meta.ok { color: var(--r-result); }

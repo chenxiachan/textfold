@@ -21,6 +21,8 @@
   POST /api/models/select     {model, effort}: the model generations use; {task: "ask", model, effort}: the one questions
                               are answered with (none: the same) and its reasoning level (none: the default)
   POST /api/agents/scan       look for agents again (also done at startup)
+  POST /api/agents/probe      {command, protocol?}: a custom agent's program, version, the agent it speaks as, its models
+  POST /api/agents/save       {key?, name, command, protocol, models: [{id, name?, efforts?}]}  ·  POST /api/agents/remove {key}
   POST /api/providers/probe   {base, api_key | key, preset}: a provider's /models
   POST /api/providers/save    {key?, preset, name, base, api_key?, models}  ·  POST /api/providers/remove {key}
   POST /api/settings          {use_thoughtdag_env}, {pdf_tier}, {lang} (one of langs.py; else 400)  ·  POST /api/settings/test
@@ -160,6 +162,9 @@ def models_payload():
         "agents": [{k: a[k] for k in ("runtime", "label", "binary", "path", "version", "runnable", "error")} | {"models": len(a["models"])}
                    for a in agents.STATE["agents"]],
         "scanning": agents.STATE["scanning"], "scannedAt": agents.STATE["scanned_at"],
+        "customAgents": [{k: a.get(k) for k in ("key", "name", "command", "protocol")} | {"models": [m["id"] for m in a.get("models") or []]}
+                         for a in s.get("custom_agents") or []],
+        "protocols": agents.PROTOCOLS,
         "providers": [{"key": p["key"], "name": p["name"], "source": p["source"], "base": p["base"], "protocol": p["protocol"],
                        "preset": p.get("preset"), "models": [m["id"] for m in p["models"]],
                        "hasKey": bool(p["api_key"]) and p["api_key"] not in ("none", "ollama")} for p in provs],
@@ -922,6 +927,38 @@ def make_handler(jobs):
                         agents.scan()
                     finally:
                         agents.STATE["scanning"] = False
+                    return self.json(models_payload())
+                if u.path == "/api/agents/probe":
+                    try:
+                        return self.json(agents.probe_custom(body.get("command", ""), body.get("protocol")))
+                    except Exception as e:
+                        return self.json({"error": str(e)[:600]}, 400)
+                if u.path == "/api/agents/save":
+                    command, protocol = (body.get("command") or "").strip(), body.get("protocol")
+                    if not command or protocol not in agents.PROTOCOLS:
+                        return self.json({"error": "a custom agent needs a command and the agent it speaks as"}, 400)
+                    name = (body.get("name") or "").strip() or command.split()[0].split("/")[-1].split("\\")[-1]
+                    have = s.get("custom_agents") or []
+                    key = body.get("key") if any(a.get("key") == body.get("key") for a in have) else None
+                    if not key:   # (a new one: a key from its name, unlike any other's; it stays when it is edited)
+                        base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "agent"
+                        key, n = base, 2
+                        while any(a.get("key") == key for a in have):
+                            key, n = f"{base}-{n}", n + 1
+                    seen, rows = set(), []
+                    for m in body.get("models") or []:   # [{id, name?, efforts?}] or ids alone (written in by hand)
+                        m = m if isinstance(m, dict) else {"id": m}
+                        mid = str(m.get("id") or "").strip()
+                        if mid and mid not in seen:
+                            seen.add(mid)
+                            rows.append({"id": mid, "name": str(m.get("name") or mid), "efforts": [str(e) for e in m.get("efforts") or []]})
+                    row = {"key": key, "name": name, "command": command, "protocol": protocol, "models": rows[:providers.MAX_MODELS]}
+                    s["custom_agents"] = [a for a in have if a.get("key") != key] + [row]
+                    models.save_settings(s)
+                    return self.json(models_payload())
+                if u.path == "/api/agents/remove":
+                    s["custom_agents"] = [a for a in s.get("custom_agents") or [] if a.get("key") != body.get("key")]
+                    models.save_settings(s)
                     return self.json(models_payload())
                 if u.path == "/api/providers/probe":
                     key = (bridges.minted() if body.get("minted") else None) or body.get("api_key") or \

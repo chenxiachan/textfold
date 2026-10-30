@@ -1501,6 +1501,7 @@
     let loaded = !!modelData, refreshing = true, refreshError = '';
     let app = null;   // in the app: its version, loaded after the dialog is visible
     let form = null;          // the provider being added or edited: {key?, preset, name, base, api_key, found, picked}
+    let agentForm = null;     // the custom agent being added or edited (#15): {key?, command, protocol, name, found, picked, manual, version, err, busy}
     const tests = {};         // the last connection test of each model: the levels' (gen), the questions' (ask)
     let bridgeStarting = false, bridgeState = null;
     let storageDraft = null, storageMode = null, storageBusy = false, storageError = null;   // ({code, message}: why a folder was refused)
@@ -1509,7 +1510,8 @@
     dlg.addEventListener('close', () => { settingsOpen = false; });
     const T = () => t();
     const host = (u) => { try { return new URL(u).host; } catch { return u; } };
-    const groupName = (g) => (data.agents.find((a) => a.runtime === g) || {}).label || (data.providers.find((p) => p.key === g) || {}).name || g;
+    const customOf = (g) => (data.customAgents || []).find((a) => `custom/${a.key}` === g);
+    const groupName = (g) => (data.agents.find((a) => a.runtime === g) || {}).label || (customOf(g) || {}).name || (data.providers.find((p) => p.key === g) || {}).name || g;
 
     // the library's folder (textfold/storage_settings.py): where it is, and another one from the next start, a copy of it
     // or a library already in a folder; why a folder is refused, in the reader's language
@@ -1565,8 +1567,56 @@
       const rows = found.map((a) => `<div class="st-item"><i class="st-dot${a.runnable ? '' : ' warn'}"></i><div class="st-main"><b>${esc(a.label)}</b>
         <span class="st-meta">${a.version ? `${esc(a.version)} · ` : ''}<code title="${esc(a.path)}">${esc(a.binary)}</code></span>${a.error ? `<p class="st-models-err">${esc(a.error)}</p>` : ''}</div>
         <span class="st-aside">${a.runnable ? esc(t.st_models.replace('{n}', a.models)) : esc(t.st_unsupported)}</span></div>`).join('');
-      return `<div class="st-list">${rows}<div class="st-item st-foot-line"><span class="st-main st-meta">${missing.length ? `${esc(t.st_notfound)}: ${missing.map((a) => esc(a.label)).join(', ')}` : ''}</span>
-        <button type="button" class="st-btn st-scan"${data.scanning ? ' disabled' : ''}>${esc(data.scanning ? t.st_scanning : t.st_rescan)}</button></div></div>`;
+      // the reader's own (#15): a command that starts one of the agents above another way, such as `mirasim claude`
+      const custom = (data.customAgents || []).map((a) => `<div class="st-item"><i class="st-dot"></i><div class="st-main"><b>${esc(a.name)}<span class="st-src ui">${esc(t.ca_custom)}</span></b>
+        <span class="st-meta">${esc((data.protocols || {})[a.protocol] || a.protocol)} · <code>${esc(a.command)}</code></span></div>
+        <span class="st-aside">${esc(t.st_models.replace('{n}', a.models.length))}</span>
+        <span class="st-acts"><button type="button" class="st-btn ca-edit" data-key="${esc(a.key)}">${esc(t.st_edit)}</button><button type="button" class="st-btn danger ca-del" data-key="${esc(a.key)}">${esc(t.st_remove)}</button></span></div>`).join('');
+      return `<div class="st-list">${rows}${custom}<div class="st-item st-foot-line"><span class="st-main st-meta">${missing.length ? `${esc(t.st_notfound)}: ${missing.map((a) => esc(a.label)).join(', ')}` : ''}</span>
+        <button type="button" class="st-btn st-scan"${data.scanning ? ' disabled' : ''}>${esc(data.scanning ? t.st_scanning : t.st_rescan)}</button></div>
+        ${agentForm ? customAgentForm() : `<button type="button" class="st-addrow ca-add"><span aria-hidden="true">＋</span>${esc(t.ca_add)}</button>`}</div>`;
+    }
+
+    // a custom agent: its command is all the reader must write. Detect runs it, says what it found (its version, which
+    // agent it runs as) and lists that agent's models to tick; models it cannot list are written in by hand.
+    const caName = (command) => { const w = (command || '').trim().split(/\s+/)[0] || ''; const n = w.split(/[\\/]/).pop().replace(/\.(exe|cmd|bat)$/i, ''); return n ? n[0].toUpperCase() + n.slice(1) : ''; };
+    const caManual = (f) => (f.manual || '').split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+    const caModels = (f) => {   // the ticked ones as listed (their names and levels), then the written ones not among them
+      const listed = (f.found || []).filter((m) => f.picked.includes(m.id));
+      return [...listed, ...caManual(f).filter((id) => !listed.some((m) => m.id === id)).map((id) => ({ id }))];
+    };
+    const caReady = (f) => !!(f.command && f.command.trim() && f.protocol && caModels(f).length && !f.busy);
+    function customAgentForm() {
+      const t = T(), f = agentForm, P = data.protocols || {};
+      const protos = `<option value=""${f.protocol ? '' : ' selected'}>—</option>` + Object.entries(P).map(([k, v]) =>
+        `<option value="${esc(k)}"${k === f.protocol ? ' selected' : ''}>${esc(v)}</option>`).join('');
+      const list = f.found && f.found.length ? `<div class="st-label">${esc(t.st_pick)}</div><div class="st-pick">${f.found.map((m) =>
+        `<label data-id="${esc(m.id.toLowerCase())}"><input type="checkbox" value="${esc(m.id)}"${f.picked.includes(m.id) ? ' checked' : ''}>${esc(m.name && m.name.toLowerCase() !== m.id.toLowerCase() ? `${m.name} · ${m.id}` : m.id)}</label>`).join('')}</div>` : '';
+      const found = f.version ? `<span class="st-meta ok">${esc(t.ca_found.replace('{v}', f.version))}</span>` : '';
+      const status = f.busy ? `<span class="st-meta">…</span>` : `${found}${f.err ? ` <span class="pf-err">${esc(f.err)}</span>` : ''}`;
+      return `<div class="st-form ca-form">
+        <label>${esc(t.ca_command)}<input class="ca-command" value="${esc(f.command || '')}" placeholder="mirasim claude" spellcheck="false" autocomplete="off" autocapitalize="off"></label>
+        <p class="st-note">${esc(t.ca_command_hint)}</p>
+        <div class="st-row"><button type="button" class="st-btn ca-detect"${f.busy ? ' disabled' : ''}>${esc(t.ca_detect)}</button>${status}</div>
+        <label>${esc(t.ca_speaks)}<select class="ca-proto">${protos}</select></label>
+        <label>${esc(t.st_name)}<input class="ca-name" value="${esc(f.name || '')}" placeholder="${esc(caName(f.command))}"></label>
+        ${list}
+        <label>${esc(t.ca_manual)}<input class="ca-manual" value="${esc(f.manual || '')}" placeholder="kimi-k2, glm-4.6" spellcheck="false" autocomplete="off"></label>
+        <div class="st-row end"><button type="button" class="st-btn ca-cancel">${esc(t.cancel)}</button><button type="button" class="primary ca-save"${caReady(f) ? '' : ' disabled'}>${esc(t.ca_save)}</button></div></div>`;
+    }
+    async function detectAgent(saved) {   // (saved: the models an edited agent was saved with, ticked again where listed)
+      const f = agentForm;
+      if (!f || !f.command.trim()) return;
+      f.busy = true; f.err = ''; f.version = ''; render();
+      try {
+        const r = await api('/api/agents/probe', { command: f.command, protocol: f.chosen ? f.protocol : null });
+        if (agentForm !== f) return;
+        f.version = r.version || ''; f.protocol = r.protocol || f.protocol; f.found = r.models || []; f.err = r.error || (r.protocol ? '' : T().ca_need_proto);
+        const keep = saved || f.picked;
+        f.picked = keep && keep.length ? f.found.map((m) => m.id).filter((id) => keep.includes(id)) : f.found.map((m) => m.id);
+        if (saved) f.manual = saved.filter((id) => !f.found.some((m) => m.id === id)).join(', ');
+      } catch (x) { if (agentForm !== f) return; f.found = null; f.err = x.message; }
+      f.busy = false; render();
     }
 
     function providerSection() {
@@ -1614,7 +1664,7 @@
         <div class="st-row end"><button type="button" class="st-btn pf-cancel">${esc(t.cancel)}</button><button type="button" class="primary pf-save"${form.found && form.found.length ? '' : ' disabled'}>${esc(t.st_save_provider)}</button></div></div>`;
     }
 
-    let formShown = false;
+    let formShown = false, agentFormShown = false;
     function discoveryState() {
       const t = T(), error = refreshError || (data.discovery && data.discovery.error);
       return `<div class="st-discovery" role="status">${refreshing ? `<p class="st-note">${esc(t.st_scanning)}</p>` : error ?
@@ -1660,8 +1710,10 @@
 
       renderEngine();
       q('.stp-body').scrollTop = y;   // (after the engine's part, which makes the sections their full height)
-      if (form && !formShown) q('.st-form').scrollIntoView({ block: 'nearest' });   // adding or editing a provider: the form in view
+      if (form && !formShown) q('.st-provider-area .st-form').scrollIntoView({ block: 'nearest' });   // adding or editing a provider: the form in view
       formShown = !!form;
+      if (agentForm && !agentFormShown) q('.ca-form').scrollIntoView({ block: 'nearest' });
+      agentFormShown = !!agentForm;
     }
     const q = (sel) => dlg.querySelector(sel);
     // the PDF engine's own part of the dialog, drawn again on its own while it installs
@@ -1718,7 +1770,7 @@
       if (!background) { render(); return; }
       // A discovery result must not rebuild a provider form the reader is editing.
       q('.st-model-area').innerHTML = modelSection() + discoveryState();
-      q('.st-agent-area').innerHTML = agentSection();
+      if (!agentForm) q('.st-agent-area').innerHTML = agentSection();
       if (!form) q('.st-provider-area').innerHTML = providerSection();
       renderEngine();
       wire();
@@ -1733,7 +1785,7 @@
         if (!dlg.isConnected) return;
         refreshing = false; refreshError = x.message; data.scanning = false;
         q('.st-model-area').innerHTML = modelSection() + discoveryState();
-        if (loaded) q('.st-agent-area').innerHTML = agentSection();
+        if (loaded && !agentForm) q('.st-agent-area').innerHTML = agentSection();
         wire();
       }
     }
@@ -1771,6 +1823,36 @@
         try { update(await api('/api/agents/scan', {}), true); }
         catch (x) { data.scanning = false; refreshError = x.message; update(data, true); }
       };
+      const caAdd = q('.ca-add');
+      if (caAdd) caAdd.onclick = () => { agentForm = { command: '', protocol: '', name: '', found: null, picked: [], manual: '' }; render(); q('.ca-command').focus(); };
+      dlg.querySelectorAll('.ca-del').forEach((b) => { b.onclick = async () => update(await api('/api/agents/remove', { key: b.dataset.key })); });
+      dlg.querySelectorAll('.ca-edit').forEach((b) => {
+        b.onclick = () => {
+          const a = data.customAgents.find((x) => x.key === b.dataset.key);
+          agentForm = { key: a.key, command: a.command, protocol: a.protocol, chosen: true, name: a.name, found: null, picked: [...a.models], manual: a.models.join(', ') };
+          detectAgent([...a.models]);
+        };
+      });
+      if (agentForm) {
+        const f = agentForm, saveBtn = q('.ca-save'), ready = () => { saveBtn.disabled = !caReady(f); };
+        const cmd = q('.ca-command'), proto = q('.ca-proto'), nm = q('.ca-name'), man = q('.ca-manual');
+        cmd.oninput = () => { f.command = cmd.value; nm.placeholder = caName(f.command); ready(); };
+        cmd.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); detectAgent(); } };
+        nm.oninput = () => { f.name = nm.value; };
+        man.oninput = () => { f.manual = man.value; ready(); };
+        proto.onchange = () => { f.protocol = proto.value; f.chosen = !!proto.value; if (f.protocol && f.command.trim()) detectAgent(); else ready(); };
+        const pick = q('.ca-form .st-pick');
+        if (pick) pick.onchange = () => { f.picked = [...pick.querySelectorAll('input:checked')].map((i) => i.value); ready(); };
+        q('.ca-detect').onclick = () => detectAgent();
+        q('.ca-cancel').onclick = () => { agentForm = null; render(); };
+        saveBtn.onclick = async () => {
+          if (!caReady(f)) return;
+          try {
+            const d = await api('/api/agents/save', { key: f.key, name: f.name.trim() || caName(f.command), command: f.command.trim(), protocol: f.protocol, models: caModels(f) });
+            agentForm = null; update(d);
+          } catch (x) { f.err = x.message; render(); }
+        };
+      }
       const td = q('.st-td');
       if (td) td.onchange = async () => update(await api('/api/settings', { use_thoughtdag_env: td.checked }));
       dlg.querySelectorAll('.st-del').forEach((b) => { b.onclick = async () => update(await api('/api/providers/remove', { key: b.dataset.key })); });

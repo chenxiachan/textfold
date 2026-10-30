@@ -140,6 +140,14 @@ def forget(rec):
 def _once(prompt, schema, spec, timeout, system):
     effort, tools = spec.get("effort"), bool(spec.get("tools"))   # (tools: the agent's own web tools, agents.py)
     if spec["kind"] == "agent":
+        if spec["runtime"] == "custom":   # (a command of the reader's, run by the driver of the agent it speaks as: agents.py)
+            found = agents.command_of(spec["command"])
+            if not found:
+                raise RuntimeError(f"{spec['agent']}: {spec['command'].split()[0]} was not found on this computer")
+            if spec["protocol"] == "claude-code":
+                return _claude(prompt, schema, spec["model"], effort, timeout, system, tools, cmd=found[0])
+            run = agents.run_codex if spec["protocol"] == "codex" else agents.run_pi
+            return run(spec["model"], prompt, schema, system, effort, timeout, tools, cmd=found[0])
         if spec["runtime"] == "claude-code":
             return _claude(prompt, schema, spec["model"], effort, timeout, system, tools)
         if spec["runtime"] == "codex":
@@ -153,16 +161,19 @@ def _once(prompt, schema, spec, timeout, system):
     return openai_call(prompt, schema, spec, system, timeout)
 
 
-def _claude(prompt, schema, model, effort, timeout, system=SYSTEM, tools=False):
-    path = agents.path_of("claude-code")
-    if not path:
-        raise RuntimeError("Claude Code was not found on this computer")
+def _claude(prompt, schema, model, effort, timeout, system=SYSTEM, tools=False, cmd=None):
+    """(cmd: the command that starts it, a custom agent's; else the Claude Code found here)"""
+    if cmd is None:
+        path = agents.path_of("claude-code")
+        if not path:
+            raise RuntimeError("Claude Code was not found on this computer")
+        cmd = agents.argv(path)
     if tools:   # the web alone (agents.py), allowed without asking, no MCP server; its own system prompt with ours after it
-        cmd = [*agents.argv(path), "-p", "--model", model, "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
+        cmd = [*cmd, "-p", "--model", model, "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
                "--strict-mcp-config", "--no-session-persistence", "--output-format", "json", "--json-schema", json.dumps(schema),
                "--append-system-prompt", system]
     else:
-        cmd = [*agents.argv(path), "-p", "--model", model, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+        cmd = [*cmd, "-p", "--model", model, "--tools", "", "--strict-mcp-config", "--no-session-persistence",
                "--output-format", "json", "--json-schema", json.dumps(schema), "--system-prompt", system]
     env = agents.child_env()
     if effort == "off":   # Claude Code has no such level: no thinking is a thinking budget of nothing

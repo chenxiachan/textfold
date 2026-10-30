@@ -1,6 +1,7 @@
 """One catalog of every model this computer can reach, and the settings that choose one.
 
   agent models  claude/claude-code/opus, codex/codex/<m>, pi/<provider>/<m>   (agents.py, scanned at startup)
+  custom agents custom/<key>/<m>: a command the reader added in the settings, run as one of the agents (agents.py)
   API models    <model id> from an env provider or a provider added in the settings (providers.py)
 
 ThoughtDAG's rules: an API id that two providers share belongs to the env provider; the default is the
@@ -27,7 +28,7 @@ ANTHROPIC_PRESET = {"id": "anthropic", "name": "Anthropic", "base": "https://api
 
 
 def load_settings():
-    s = {"model": None, "ask_model": None, "ask_effort": None, "efforts": {}, "providers": [], "use_thoughtdag_env": False,
+    s = {"model": None, "ask_model": None, "ask_effort": None, "efforts": {}, "providers": [], "custom_agents": [], "use_thoughtdag_env": False,
          "pdf_tier": "fast", "engine_path": None, "zotero": {},
          "lang": None}   # the reader's language as the page last told it (the page keeps its own: pf-ui-lang), for other programs
     old_home = next((h for h in OLD_HOMES if (h / "settings.json").exists()), None)
@@ -85,7 +86,7 @@ def provider_list(s, live=None):
 def catalog(s=None, live=None):
     s = s or load_settings()
     out, seen = [], set()
-    for m in agents.models():
+    for m in agents.models() + agents.custom_models(s.get("custom_agents")):
         out.append({"id": m["id"], "name": m["name"], "kind": "agent", "group": m["runtime"],
                     "efforts": m.get("efforts") or [], "defaultEffort": m.get("defaultEffort")})
         seen.add(m["id"])
@@ -121,6 +122,15 @@ def resolve(model_id=None, s=None):
     if model_id in LEGACY_ALIASES:  # the command line's --model sonnet
         model_id = f"claude/claude-code/{model_id}"
     effort = None   # set per task (for_task); the per-model efforts of v0.9 and before are no longer read
+    if model_id.startswith(agents.CUSTOM):   # a custom agent's: custom/<key>/<its model, Pi's provider/model as one>
+        key, _, model = model_id[len(agents.CUSTOM):].partition("/")
+        a = next((a for a in s.get("custom_agents") or [] if a.get("key") == key), None)
+        if a and model and a.get("protocol") in agents.PROTOCOLS:
+            # (runtime "custom", not the agent it speaks as: llm.call keys its cache by the whole id, never by
+            # Claude Code's bare model name, so its replies are never taken for Claude Code's own)
+            return {"id": model_id, "kind": "agent", "runtime": "custom", "protocol": a["protocol"], "command": a["command"],
+                    "agent": a.get("name") or key, "model": model, "effort": effort}
+        raise RuntimeError(f"Model {model_id} is not available (its custom agent is gone)")
     rt = agents.runtime_of(model_id)
     if rt:
         rest = model_id[len(agents.PREFIX[rt]):]
