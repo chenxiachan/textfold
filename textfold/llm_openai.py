@@ -48,7 +48,16 @@ def _post(url, body, headers, timeout):
         kind = r.headers.get("Content-Type") or ""
         raw = r.read()
     if "text/event-stream" in kind or raw.lstrip().startswith(b"data:"):   # streamed, asked for or not
-        return _events(raw)
+        d = _events(raw)
+        # Some OpenAI-compatible relays answer a whole completion under the stream's header: one JSON object, no data:
+        # line at all, which _events() reads as nothing. Read that body as the completion it is, rather than fail the
+        # call "no JSON in reply" with the reply right there in it. A stream that really was one keeps its own text.
+        if _content(d) == "":
+            try:
+                return json.loads(raw)
+            except ValueError:
+                pass
+        return d
     return json.loads(raw)
 
 

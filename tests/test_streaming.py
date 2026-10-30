@@ -50,6 +50,13 @@ class Service(BaseHTTPRequestHandler):
             return self.send(200, json.dumps({"choices": [{"message": {"content": text}}]}, ensure_ascii=False))
         if self.path.startswith("/always"):
             return self.send(200, sse(text), "text/event-stream; charset=utf-8")
+        if self.path.startswith("/mislabelled"):
+            # a whole completion, under the stream's header: some OpenAI-compatible relays answer so
+            return self.send(200, json.dumps({"choices": [{"message": {"content": text}}]}, ensure_ascii=False),
+                             "text/event-stream; charset=utf-8")
+        if self.path.startswith("/comment"):
+            # a stream that opens with a comment line, as a streaming service keeps the connection alive
+            return self.send(200, ": keep-alive\n\n" + sse(text), "text/event-stream; charset=utf-8")
         if not body.get("stream"):
             said = {"error": {"message": "only stream=true is supported"}} if self.path.startswith("/only") else {"error": "bad request"}
             return self.send(400, json.dumps(said))
@@ -96,6 +103,18 @@ class Streamed(unittest.TestCase):
         self.assertEqual(self.ask("always"), (REPLY, None))
         self.assertEqual(len(Service.seen), 1)
         self.assertNotIn("stream", Service.seen[0][1])
+
+    def test_a_whole_reply_under_the_streams_header(self):
+        """A relay that keeps "text/event-stream" on a whole completion is read as one. Read as events it said nothing
+        and the call failed "no JSON in reply", with the reply right there in the body."""
+        self.assertEqual(self.ask("mislabelled"), (REPLY, None))
+        self.assertEqual(len(Service.seen), 1)
+
+    def test_a_stream_that_opens_with_a_comment_is_still_a_stream(self):
+        """A stream keeps itself alive with a ": keep-alive" comment before its first data: line. The header's saying
+        it is one is what _post() goes by: judged by the body alone, such a reply would look like neither."""
+        self.assertEqual(self.ask("comment"), (REPLY, None))
+        self.assertEqual(len(Service.seen), 1)
 
 
 class Events(unittest.TestCase):
