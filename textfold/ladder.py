@@ -721,7 +721,8 @@ def build(doc, cfg, cache_dir, jobs=4, log=print, progress=None, force=False, st
         if stop is not None and stop.is_set():   # stopped: the chunks not yet sent are skipped
             return c, None, llm.Stopped()
         try:
-            return c, llm.call(prompt_for(doc, c), SCHEMA, cfg, cache_dir, force, system=llm.system_for(doc["meta"])), None
+            return c, llm.call(prompt_for(doc, c), SCHEMA, cfg, cache_dir, force, system=llm.system_for(doc["meta"]),
+                               **({"stop": stop} if stop is not None else {})), None
         except Exception as e:  # one failed chunk falls back to local ladders, the rest still build
             return c, None, e
 

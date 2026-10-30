@@ -181,7 +181,8 @@ def _ask(doc, lang, tasks, cfg, cache_dir, jobs, log, tick, force, stop, again=F
         if stop is not None and stop.is_set():   # stopped: the parts not yet sent are skipped
             return task, None, llm.Stopped()
         try:
-            return task, llm.call(prompt_for(doc, {**c, "units": us}, lang), SCHEMA, cfg, cache_dir, force, system=llm.system_for(doc["meta"])), None
+            return task, llm.call(prompt_for(doc, {**c, "units": us}, lang), SCHEMA, cfg, cache_dir, force, system=llm.system_for(doc["meta"]),
+                                  **({"stop": stop} if stop is not None else {})), None
         except Exception as e:
             return task, None, e
 
