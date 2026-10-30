@@ -30,7 +30,7 @@ For Chrome · Edge · Brave
 
 <br>
 
-<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/zoom.gif" width="880" alt="A paper folding from its full text into a map of its sections, and back">
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/browser.gif" width="880" alt="A Wikipedia article in Chrome, sent to TextFold with one click on its button, then folded level by level from the full text into a map of its sections">
 
 </div>
 
@@ -45,6 +45,8 @@ Choose the level of detail you need, and lower your cognitive load.
 | **3** | **Key** | its point and the reason for it | AI, resting on the Brief sentences |
 | **4** | **Takeaway** | one line on the spine of its section | AI |
 | **5** | **Topic** | a few words; the text becomes a map of section cards | AI |
+
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/zoom.gif" width="880" alt="A paper folding from its full text into a map of its sections, and back">
 
 ## Also for agent output
 

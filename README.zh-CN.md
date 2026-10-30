@@ -30,7 +30,7 @@
 
 <br>
 
-<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/zoom-zh.gif" width="880" alt="一篇论文从全文折叠成章节地图，再展开回来">
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/browser.gif" width="880" alt="Chrome 里的一篇维基百科文章，点一下 TextFold 按钮传进 TextFold，再一层层从全文折叠成章节地图">
 
 </div>
 
@@ -45,6 +45,8 @@
 | **3** | **关键句** | 这一段的要点和理由 | AI，依据是简述里那几句 |
 | **4** | **要点** | 一行，挂在本节的主线上 | AI |
 | **5** | **主题** | 几个词；整篇变成一张章节卡片地图 | AI |
+
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/zoom-zh.gif" width="880" alt="一篇论文从全文折叠成章节地图，再展开回来">
 
 ## 也可以用在 Agent 输出上
 
