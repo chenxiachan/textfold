@@ -123,9 +123,9 @@ Models (⚙ Model & API), ported from ThoughtDAG's model access:
   translation came back short: translations are made in parts of about 6,500 characters, a paragraph's sentences
   and its levels counted (a section of many short paragraphs has more levels than text: #99).
 - **API providers**: keys from the environment, or a `.env` here or in `~/.textfold/`: Zhipu, Qwen, OpenAI,
-  Anthropic, Google, DeepSeek, Kimi, OpenRouter, Ollama. (Until v0.9 ThoughtDAG's `.env` was read too; its providers
+  Anthropic, Google, DeepSeek, Kimi, OpenRouter, Atlas Cloud, Ollama. (Until v0.9 ThoughtDAG's `.env` was read too; its providers
   were copied once into the settings.) Others are added in the dialog
-  from ThoughtDAG's presets (OpenRouter, Z.ai, 智谱, GLM Coding, Kimi Code, MiniMax, DeepSeek, OpenAI, Google AI Studio,
+  from ThoughtDAG's presets (OpenRouter, Atlas Cloud, Z.ai, 智谱, GLM Coding, Kimi Code, MiniMax, DeepSeek, OpenAI, Google AI Studio,
   Moonshot, Ollama, a ChatGPT bridge, Anthropic, custom): the endpoint's `/models` is fetched and you pick which to offer.
   Keys added here stay in `~/.textfold/settings.json` (mode 600), outside the project folder. (Under earlier
   names they were in `~/.paperfold/` (PaperFold) or `~/.dynamic-reader/`: copied from there once, and left in place.)

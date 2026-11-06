@@ -22,6 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import __version__
+
 _WORKED = {}   # (base, model, level) -> index of the request shape that was accepted
 WAITS = (5, 15, 30, 45)   # seconds before asking again when rate-limited (free models: 20 requests a minute)
 
@@ -39,7 +41,9 @@ def auth(base, api_key):
     session."""
     if _workbuddy(base):
         return {"x-wb-webapp-access-key": api_key or ""}
-    return {"Authorization": f"Bearer {api_key or 'none'}"}
+    # Atlas Cloud's Cloudflare front refuses Python's default user agent (error 1010)
+    ua = {"User-Agent": f"TextFold/{__version__}"} if "atlascloud.ai" in base else {}
+    return {"Authorization": f"Bearer {api_key or 'none'}", **ua}
 
 
 def _post(url, body, headers, timeout):

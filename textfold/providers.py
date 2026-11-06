@@ -39,6 +39,8 @@ ENV_PROVIDERS = [
      "base": "https://api.moonshot.cn/v1", "models": ["kimi-k2-turbo-preview", "kimi-latest"]},
     {"key": "openrouter", "name": "OpenRouter", "env": ["OPENROUTER_API_KEY"], "list": "OPENROUTER_MODELS", "base": "https://openrouter.ai/api/v1",
      "models": ["openrouter/auto"]},
+    {"key": "atlascloud", "name": "Atlas Cloud", "env": ["ATLASCLOUD_API_KEY"], "list": "ATLASCLOUD_MODELS", "base": "https://api.atlascloud.ai/v1",
+     "models": ["deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro"]},
     # Ollama needs no key; ThoughtDAG registers it only when OLLAMA_MODELS is set, here a running Ollama is also asked
     {"key": "ollama", "name": "Ollama", "env": [], "list": "OLLAMA_MODELS", "base_env": "OLLAMA_BASE_URL",
      "base": "http://localhost:11434", "suffix": "/v1", "models": [], "nokey": True},
@@ -49,6 +51,9 @@ PRESETS = [
     {"id": "openrouter", "name": "OpenRouter", "base": "https://openrouter.ai/api/v1", "keyUrl": "https://openrouter.ai/keys",
      "recommend": ["openrouter/auto", "anthropic/claude-sonnet-5", "openai/gpt-5.5", "google/gemini-3.1-pro-preview",
                    "deepseek/deepseek-v4-pro", "z-ai/glm-5", "qwen/qwen3.7-max", "moonshotai/kimi-k2.6"]},
+    {"id": "atlascloud", "name": "Atlas Cloud", "base": "https://api.atlascloud.ai/v1", "keyUrl": "https://console.atlascloud.ai/api-keys",
+     "recommend": ["deepseek-ai/deepseek-v4-flash", "deepseek-ai/deepseek-v4-pro", "moonshotai/kimi-k3", "zai-org/glm-5.3",
+                   "qwen/qwen3.8-max"]},
     {"id": "zai", "name": "Z.ai GLM", "region": "en", "base": "https://api.z.ai/api/paas/v4", "recommend": ["glm-5.3-flash", "glm-5"]},
     {"id": "zhipu", "name": "智谱 GLM", "region": "zh", "base": "https://open.bigmodel.cn/api/paas/v4", "recommend": ["glm-5.3-flash", "glm-4v-flash", "glm-5"]},
     {"id": "glm-coding", "name": "GLM Coding Plan", "region": "zh", "base": "https://open.bigmodel.cn/api/coding/paas/v4", "recommend": ["glm-5"]},
