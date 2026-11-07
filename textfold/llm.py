@@ -93,7 +93,7 @@ def kept(f):
     return rec if isinstance(rec, dict) and "out" in rec else None
 
 
-def call(prompt, schema, model, cache_dir: Path, force=False, timeout=900, system=SYSTEM):
+def call(prompt, schema, model, cache_dir: Path, force=False, timeout=900, system=SYSTEM, stop=None):
     """(system: the generation's role unless a caller has another, as the questions about a paper do)"""
     spec = spec_of(model)
     effort = spec.get("effort")
@@ -115,14 +115,17 @@ def call(prompt, schema, model, cache_dir: Path, force=False, timeout=900, syste
         raise RuntimeError("No model is available: TEXTFOLD_NO_MODELS is set")
     note = None
     try:
-        out, cost = _once(prompt, schema, spec, timeout, system)
+        out, cost = _once(prompt, schema, spec, timeout, system, **({"stop": stop} if stop is not None else {}))
+    except Stopped:
+        raise
     except Exception as e:
         # A reasoning level is a request, never a condition: whatever went wrong with it set (a flag or field an API no
         # longer takes, a level a model does not have), the call is made once more the model's own way.
-        if not effort:
+        if not effort or re.search(r"\b429\b|too many requests|rate.limit", str(e), re.I):
             raise
         note = f"reasoning level {effort} dropped: {str(e)[:200]}"
-        out, cost = _once(prompt, schema, {**spec, "effort": None}, timeout, system)
+        out, cost = _once(prompt, schema, {**spec, "effort": None}, timeout, system,
+                          **({"stop": stop} if stop is not None else {}))
     rec = {"out": out, "cost": cost, "models": [spec["id"]] + ([effort] if effort else [])}
     if note:
         rec["note"] = note
@@ -157,7 +160,7 @@ def forget(rec):
         Path(rec["file"]).unlink(missing_ok=True)
 
 
-def _once(prompt, schema, spec, timeout, system):
+def _once(prompt, schema, spec, timeout, system, stop=None):
     effort, tools = spec.get("effort"), bool(spec.get("tools"))   # (tools: the agent's own web tools, agents.py)
     if spec["kind"] == "agent":
         if spec["runtime"] == "custom":   # (a command of the reader's, run by the driver of the agent it speaks as: agents.py)
@@ -167,11 +170,17 @@ def _once(prompt, schema, spec, timeout, system):
             if spec["protocol"] == "claude-code":
                 return _claude(prompt, schema, spec["model"], effort, timeout, system, tools, cmd=found[0])
             run = agents.run_codex if spec["protocol"] == "codex" else agents.run_pi
-            return run(spec["model"], prompt, schema, system, effort, timeout, tools, cmd=found[0])
+            options = {"cmd": found[0]}
+            if spec["protocol"] == "codex":
+                options["capabilities"] = {"efforts": spec.get("efforts") or []}
+                if stop is not None:
+                    options["stop"] = stop
+            return run(spec["model"], prompt, schema, system, effort, timeout, tools, **options)
         if spec["runtime"] == "claude-code":
             return _claude(prompt, schema, spec["model"], effort, timeout, system, tools)
         if spec["runtime"] == "codex":
-            return agents.run_codex(spec["model"], prompt, schema, system, effort, timeout, tools)
+            return agents.run_codex(spec["model"], prompt, schema, system, effort, timeout, tools,
+                                    **({"stop": stop} if stop is not None else {}))
         if spec["runtime"] == "codebuddy":
             return agents.run_codebuddy(spec["model"], prompt, schema, system, effort, timeout, tools)
         return agents.run_pi(spec["model"], prompt, schema, system, effort, timeout, tools)

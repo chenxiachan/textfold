@@ -128,8 +128,12 @@ def resolve(model_id=None, s=None):
         if a and model and a.get("protocol") in agents.PROTOCOLS:
             # (runtime "custom", not the agent it speaks as: llm.call keys its cache by the whole id, never by
             # Claude Code's bare model name, so its replies are never taken for Claude Code's own)
-            return {"id": model_id, "kind": "agent", "runtime": "custom", "protocol": a["protocol"], "command": a["command"],
+            spec = {"id": model_id, "kind": "agent", "runtime": "custom", "protocol": a["protocol"], "command": a["command"],
                     "agent": a.get("name") or key, "model": model, "effort": effort}
+            if a["protocol"] == "codex":
+                row = next((m for m in a.get("models") or [] if m.get("id") == model), {})
+                spec["efforts"] = row.get("efforts") or []
+            return spec
         raise RuntimeError(f"Model {model_id} is not available (its custom agent is gone)")
     rt = agents.runtime_of(model_id)
     if rt:

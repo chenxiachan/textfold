@@ -781,7 +781,8 @@ def build(doc, cfg, cache_dir, jobs=4, log=print, progress=None, force=False, st
         if stop is not None and stop.is_set():   # stopped: the chunks not yet sent are skipped
             return task, None, llm.Stopped()
         try:
-            return task, llm.call(prompt_for(doc, {**c, "units": us}), SCHEMA, cfg, cache_dir, force, system=system), None
+            return task, llm.call(prompt_for(doc, {**c, "units": us}), SCHEMA, cfg, cache_dir, force, system=system,
+                                  **({"stop": stop} if stop is not None else {})), None
         except Exception as e:  # one failed chunk falls back to local ladders, the rest still build
             return task, None, e
 
@@ -812,7 +813,10 @@ def build(doc, cfg, cache_dir, jobs=4, log=print, progress=None, force=False, st
         """The line of a section asked in parts, from its units' takeaways."""
         nonlocal cost
         try:
-            rec, cached = llm.call(section_prompt(doc, c), SECTION_SCHEMA, cfg, cache_dir, force, system=system)
+            rec, cached = llm.call(section_prompt(doc, c), SECTION_SCHEMA, cfg, cache_dir, force, system=system,
+                                   **({"stop": stop} if stop is not None else {}))
+        except llm.Stopped:
+            raise
         except Exception as e:
             warnings.append(f"{c['id']}: its own line: {e}")
             return None

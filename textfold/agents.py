@@ -250,7 +250,10 @@ def child_env():
     """Children get the widened PATH, so a node-based CLI finds node, and USER and LOGNAME even where the server was
     started without them (launchd, cron, env -i): Claude Code finds its sign-in in the keychain under USER, and
     without it says it is not logged in."""
-    env = {**os.environ, "PATH": os.pathsep.join(search_dirs())}
+    controls = {"CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_TOOL_CALL_ID"}
+    env = {k: v for k, v in os.environ.items() if k not in controls
+           and not k.startswith(("CODEX_APP_", "CODEX_INTERNAL_", "CODEX_TASK_"))}
+    env["PATH"] = os.pathsep.join(search_dirs())
     if not (env.get("USER") and env.get("LOGNAME")):
         try:
             import pwd   # not on Windows, where neither is needed
@@ -743,8 +746,51 @@ def parse_json(text, schema=None):
     raise RuntimeError("no JSON in reply" if "{" not in text else "the reply's JSON does not parse")
 
 
-def run_codex(model, prompt, schema, system, effort, timeout, tools=False, cmd=None):
-    """(cmd: the command that starts it, a custom agent's; else the Codex found here)"""
+_CODEX_CALL = threading.Lock()   # one owned request; do not flood the reader's shared account
+
+
+def _codex_effort(model, effort, capabilities=None):
+    """Translate the request only at dispatch, leaving llm.call's cache key intact.
+
+    Discovery already asked model/list. Do not probe with paid failing requests
+    or assume every Codex model accepts the same reasoning levels.
+    """
+    if effort in (None, "default"):
+        return None
+    row = capabilities
+    if row is None:
+        agent = next((a for a in STATE["agents"] if a["runtime"] == "codex" and a.get("runnable")), {})
+        row = next((m for m in agent.get("models", []) if m.get("model") == model), None)
+    if row is None:
+        return None if effort == "off" else effort  # unknown model: defer to CLI defaults for off
+    levels = [level for level in row.get("efforts", []) if isinstance(level, str) and level]
+    if not levels:
+        return None
+    if effort in levels:
+        return effort
+    order = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+    supported = [level for level in order if level in levels]
+    if supported:
+        if effort == "off":
+            return supported[0]
+        if effort in order:
+            lower = [level for level in supported if order.index(level) <= order.index(effort)]
+            return lower[-1] if lower else supported[0]
+    return row.get("defaultEffort") if row.get("defaultEffort") in levels else levels[0]
+
+
+def run_codex(model, prompt, schema, system, effort, timeout, tools=False, cmd=None, stop=None, capabilities=None):
+    from .llm import Stopped
+    while not _CODEX_CALL.acquire(timeout=.2):
+        if stop is not None and stop.is_set(): raise Stopped()
+    try:
+        if stop is not None and stop.is_set(): raise Stopped()
+        return _codex(model, prompt, schema, system, effort, timeout, tools, stop, cmd, capabilities)
+    finally:
+        _CODEX_CALL.release()
+
+
+def _codex(model, prompt, schema, system, effort, timeout, tools, stop, cmd, capabilities):
     if cmd is None:
         path = path_of("codex")
         if not path:
@@ -756,20 +802,23 @@ def run_codex(model, prompt, schema, system, effort, timeout, tools=False, cmd=N
         # (tools: its web search too; the sandbox stays read-only)
         args = [*cmd, *(["--search"] if tools else []), "exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only",
                 "-m", model, "--output-schema", str(sf), "-o", str(of)]
-        # off is "none" (gpt-5.5 takes it, and refuses "minimal"); a model that refuses "none" runs at "low"
-        for level in (["none", "low"] if effort == "off" else [effort]):
-            of.unlink(missing_ok=True)
-            # Codex can panic when its CLI writes to a full nonblocking pipe. Regular files avoid pipe backpressure.
-            with tempfile.TemporaryFile(dir=tmp) as stdout, tempfile.TemporaryFile(dir=tmp) as stderr:
-                r = subprocess.run(args + (["-c", f"model_reasoning_effort={level}"] if level else []) + ["-"], input=f"{system}\n\n{prompt}",
-                                   stdout=stdout, stderr=stderr, text=True, encoding="utf-8", errors="replace",
-                                   timeout=timeout, env=child_env(), cwd=tmp)
-                if not r.returncode and of.exists():
-                    return parse_json(of.read_text(encoding="utf-8")), None
-                stream = stderr if stderr.seek(0, os.SEEK_END) else stdout
-                size = stream.seek(0, os.SEEK_END)
-                stream.seek(max(0, size - 3200))
-                detail = stream.read().decode("utf-8", errors="replace")[-800:]
+        level = _codex_effort(model, effort, capabilities)
+        call = args + (["-c", f"model_reasoning_effort={level}"] if level else []) + ["-"]
+        options = dict(input=f"{system}\n\n{prompt}", text=True, encoding="utf-8", errors="replace",
+                       timeout=timeout, env=child_env(), cwd=tmp)
+        # Codex can panic when its CLI writes to a full nonblocking pipe.
+        with tempfile.TemporaryFile(dir=tmp) as stdout, tempfile.TemporaryFile(dir=tmp) as stderr:
+            if stop is None:
+                r = subprocess.run(call, stdout=stdout, stderr=stderr, **options)
+            else:
+                from ._agent_process import run
+                r = run(call, stop=stop, stdout=stdout, stderr=stderr, **options)
+            if not r.returncode and of.exists():
+                return parse_json(of.read_text(encoding="utf-8")), None
+            stream = stderr if stderr.seek(0, os.SEEK_END) else stdout
+            size = stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, size - 3200))
+            detail = stream.read().decode("utf-8", errors="replace")[-800:]
         raise RuntimeError(f"codex exec exited {r.returncode}: {detail}")
 
 
