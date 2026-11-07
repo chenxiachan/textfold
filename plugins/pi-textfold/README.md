@@ -1,8 +1,8 @@
 # TextFold for Pi
 
-Your agent writes more than you have time to read. TextFold folds every reply in [Pi](https://pi.dev) — and the reasoning behind it — to the level you need, from every word to the answer in one sentence, with one key. It is the fold of [TextFold for Claude Code](../textfold/README.md), as a Pi extension, from [TextFold](../../README.md).
+Your agent writes more than you have time to read. TextFold folds every reply in [Pi](https://pi.dev) — and the reasoning behind it — to the level you need, from every word to the answer in one sentence, with one key. It is the fold of [TextFold for Claude Code](https://github.com/chenxiachan/textfold/tree/main/plugins/textfold), as a Pi extension, from [TextFold](https://github.com/chenxiachan/textfold#readme).
 
-<img src="../../docs/assets/pi-think.gif" width="880" alt="A coding turn in Pi, its thinking and its reply, folding a level at a time until each is one sentence, by key and by a click on the row">
+<img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/pi-think.gif" width="880" alt="A coding turn in Pi, its thinking and its reply, folding a level at a time until each is one sentence, by key and by a click on the row">
 
 | Key | Level | What you get |
 |:-:|---|---|
@@ -15,6 +15,8 @@ Your agent writes more than you have time to read. TextFold folds every reply in
 Hold Alt and type the digit, click a level in the row, or type `/fold` and a level: `/fold 3`, `/fold points`, `/fold off`. `/fold` alone moves to the next level. `/fold keys` shows what is bound, and `/fold calibrate` teaches the keys: it asks you to press your own Alt+1 … Alt+5 and remembers them, so the table above binds on any keyboard, not just the layout Alt+1…5 happens to arrive on. Clicking works where pi owns the mouse (its fullscreen UI, the default); where the terminal keeps the mouse, the keys and `/fold` do everything. A folded block tells you its level and how much of it you are seeing, and Alt+1 brings back every word. Short pieces stay whole: one under about 80 words, or one a fold would barely shorten, always shows as written — which is why a turn's one-line notes between tool calls stay as they are.
 
 **Reasoning folds too.** In a coding turn most of the words are thinking: thousands of them around a few hundred words of reply. Reasoning is folded at the same level by the same rule, so the fold covers what the turn actually did rather than only its closing paragraph. The reader's own message is never touched.
+
+**Tool rows fold too.** A command line stays; its output folds with the level: Pi's own preview at Full and Brief, the first two lines and a count of the rest at Points, nothing but the call at Outline and Gist. So a turn reads as the list of what happened, not the log of it — 623 lines of tool rows become 151 in a measured 21-call turn. Pi's expand key still shows one row in full whatever the level, and Alt+1 brings every row back.
 
 **Every reply at once.** A new level folds every reply in place, the earlier ones too, and the row above the prompt shows the five levels, the one you read at marked. Pi keeps each reply as it drew it, so the extension has the whole conversation drawn again when the level changes.
 
@@ -48,6 +50,6 @@ Pi keeps the path, so leave the clone where it is. To try it for one session wit
 - The section changes the order of what the model writes, not what it says or how much. Pi runs many models: check on your own work that yours leads with the point, and does its work as well as before.
 - `extension/fold.ts` is the Claude Code mod's own engine, and the section is the mod's own text. A test keeps both the same, so a reply folds the same way in Claude Code and in Pi.
 
-The tests run with `npm install && npm test` in this folder. `tests/tui_smoke.py` drives the real Pi with a model and checks the keys; its first lines say how to run it.
+The tests run with `npm install && npm test` in the repository's `plugins/pi-textfold/` folder. `tests/tui_smoke.py` drives the real Pi with a live model and checks the keys; its first lines say how to run it.
 
 TextFold for Pi was contributed by [Joseph Lam](https://github.com/jlamweil).

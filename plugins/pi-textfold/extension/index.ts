@@ -16,6 +16,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { parseKey, wrapTextWithAnsi, type KeyId, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { appendFileSync } from "node:fs";
 import { fold, LEVELS, worthFolding } from "./fold";
+import { foldToolLines } from "./tools";
 import { hasBeenWelcomed, keysFile, loadKeys, markWelcomed, saveKeys, type KeysMap } from "./keys";
 import { guardDigit } from "./guard";
 import { foldPanelLines, PANEL_KEY } from "./panel";
@@ -96,6 +97,50 @@ export default function textfoldFold(pi: ExtensionAPI) {
 		if (!worth) return markdown;
 		return `${f.text || "…"}\n\n*${levelName(level)} · ${f.shown} of ${f.total} words · Alt+1 unfolds*`;
 	});
+
+	// Tool rows fold at the same level. A row is a component, not markdown, so the
+	// fold reaches it through pi's renderer hook: the built-in renderer still draws
+	// the row, and the wrapper keeps only the lines this level wants. The level is
+	// read when the row draws, not when it was built: a level change invalidates the
+	// screen, which is what re-renders the row (a plain redraw does not).
+	let lastToolLog = "";
+	pi.registerToolRenderer((toolName, next) => {
+		const base = next();
+		const draw = base?.renderResult;
+		if (!base || !draw) return base;
+		return {
+			...base,
+			renderResult: (result, options, theme, ctx) => {
+				const state = (ctx.state ?? {}) as { textfoldInner?: unknown };
+				// pi hands back the component this renderer returned last time (the wrapper).
+				// The built-in renderers clear and re-add children on what they get, so they
+				// must get the component they drew — not the wrapper around it.
+				const inner = draw(result, options, theme, { ...ctx, lastComponent: state.textfoldInner as never });
+				state.textfoldInner = inner;
+				// Asking for one row (pi's expand key) outranks the fold: it is the reader
+				// naming the row they want in full.
+				const expanded = options.expanded === true;
+				return {
+					render: (width: number): string[] => {
+						const lines = inner.render(width);
+						if (expanded) return lines;
+						const folded = foldToolLines(lines, level);
+						if (folded.length !== lines.length) {
+							// One line per row shape, not per frame: the row re-renders often.
+							const key = `${toolName}:${level}:${folded.length}:${lines.length}`;
+							if (key !== lastToolLog) {
+								lastToolLog = key;
+								DEBUG?.(`tool ${toolName} level=${level} lines=${folded.length}/${lines.length}`);
+							}
+						}
+						return folded;
+					},
+					invalidate: () => inner.invalidate?.(),
+				};
+			},
+		};
+	});
+	DEBUG?.("tool rows folded by the level");
 
 	// The row above the prompt names the five levels and marks the one read at. Pi hands its screen to the
 	// row's factory, which the extension keeps: a new level has to be drawn on all of it.

@@ -9,10 +9,12 @@ import glob, os, re, sys
 
 WANT = {
     "registerMarkdownTransformer": "F-C1 in-place fold",
+    "registerToolRenderer": "tool rows fold at the level (D4)",
     "registerShortcut": "key UX",
     "registerFlag": "digit-guard flag (C2)",
     "appendEntry": "level persistence (C1)",
     "registerEntryRenderer": "custom entry rendering",
+    "ToolRenderContext": "tool-row wrapper keeps the built-in component (D4)",
     "getEditorText": "digit-guard reinsertion (C2)",
     "setEditorText": "digit-guard reinsertion (C2)",
     "custom": "/fold calibrate teaching overlay",

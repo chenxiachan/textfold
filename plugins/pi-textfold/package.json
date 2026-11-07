@@ -4,10 +4,17 @@
   "description": "Read Pi's replies at the level you need, from every word to the answer in one sentence, with one key.",
   "keywords": ["pi-package"],
   "license": "Apache-2.0",
+  "homepage": "https://github.com/chenxiachan/textfold/tree/main/plugins/pi-textfold",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chenxiachan/textfold.git",
     "directory": "plugins/pi-textfold"
+  },
+  "bugs": {
+    "url": "https://github.com/chenxiachan/textfold/issues"
+  },
+  "engines": {
+    "node": ">=22.15"
   },
   "pi": {
     "extensions": ["./extension/index.ts"]
@@ -15,7 +22,7 @@
   "files": [
     "extension/",
     "README.md",
-    "docs/"
+    "LICENSE"
   ],
   "scripts": {
     "test": "vitest run",
