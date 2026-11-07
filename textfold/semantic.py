@@ -46,7 +46,7 @@ def normalize(html, resolve_img=None, sizes=False):
     a Markdown file's author wrote them (a README's small logo); other sources' images are fetched at another size."""
     soup = BeautifulSoup(html, "lxml")
     root = soup.body or soup
-    for c in root.find_all(string=lambda s: isinstance(s, Comment)):
+    for c in [s for s in root.descendants if isinstance(s, Comment)]:
         c.extract()
     _sanitize(root, sizes)
     _diagrams(root)
@@ -65,13 +65,15 @@ def normalize(html, resolve_img=None, sizes=False):
     _loose_images(soup, root)
     _images(soup, root, resolve_img)
     _tables(soup, root)
-    for el in root.find_all(["blockquote", "div", "section", "article", "main", "header", "footer", "aside"]):
-        if not _ours(el):
+    # (a walk with a set of names: find_all with a list builds a matcher for each name on every call)
+    flat = {"blockquote", "div", "section", "article", "main", "header", "footer", "aside", "hr", *INLINE_SPAN}
+    for el in [t for t in root.descendants if t.name in flat]:
+        if el.name == "hr":
+            el.decompose()
+        elif el.name in INLINE_SPAN:
+            el.name = "span"
+        elif not _ours(el):
             el.unwrap()   # a quotation's paragraphs are read like any other; containers carry nothing of their own
-    for el in root.find_all("hr"):
-        el.decompose()
-    for el in root.find_all(INLINE_SPAN):
-        el.name = "span"
     _lists(soup, root)
     blocks = _flow(soup, root)
     art = soup.new_tag("article", attrs={"class": "ltx_document"})
@@ -86,11 +88,13 @@ def _ours(el):
 
 
 def _sanitize(root, sizes=False):
+    dropped = set()   # ids of the elements inside a dropped one (el.decomposed would search each element's subtree)
     for el in list(root.find_all(True)):
-        if getattr(el, "decomposed", False):
+        if id(el) in dropped:
             continue
         name = (el.name or "").lower()
         if name in DROP:
+            dropped.update(map(id, el.descendants))
             el.decompose()
             continue
         if name in MATHML:
@@ -123,7 +127,7 @@ def _diagrams(root):
     """A diagram written in Mermaid (```mermaid in Markdown; <pre class="mermaid"> or <pre lang="mermaid"> on a web page)
     as <pre class="pf-mermaid"> holding its source alone: the reader draws it (web/vendor/mermaid), and where it cannot,
     the source shows as the code it is."""
-    for el in root.find_all(["pre", "div"]):
+    for el in [t for t in root.descendants if t.name in ("pre", "div")]:
         code = el.find("code", recursive=False) if el.name == "pre" else None
         names = {*el.get("class", []), *(code.get("class", []) if code else [])}
         if not (names & MERMAID or el.get("lang") == "mermaid") or (el.name == "div" and el.find(True)):
@@ -288,7 +292,7 @@ def _math(soup, root):
     it. markdown-it's display formulas (a Markdown file's $$) are numbered, and any formula's \\tag; a reference to a
     label is its number."""
     found, labels, n = [], {}, 0
-    for el in root.find_all(["span", "div"], class_="math"):
+    for el in [t for t in root.descendants if t.name in ("span", "div") and "math" in t.get("class", ())]:
         cls = el.get("class", [])
         display = el.name == "div" or "display" in cls or "block" in cls
         latex, number, label = _strip_delims(el.get_text("")), None, None
@@ -364,7 +368,8 @@ def _footnotes(soup, root):
     """A footnote list at the end (markdown-it, Pandoc) moves into the text, where its mark is: LaTeXML's shape, which
     the reader shows on hover."""
     notes = {}
-    for box in root.find_all(["section", "div", "ol"], class_=re.compile(r"^footnotes")):
+    boxes = [t for t in root.descendants if t.name in ("section", "div", "ol") and any(c.startswith("footnotes") for c in t.get("class", ()))]
+    for box in boxes:
         for li in box.find_all("li", id=True):
             for back in li.find_all("a", class_=re.compile("footnote-back|footnote-backref")):
                 back.decompose()
@@ -400,7 +405,7 @@ def _footnotes(soup, root):
         note.append(outer)
         host = a.parent if a.parent and a.parent.name == "sup" and len(a.parent.find_all(True)) == 1 else a
         host.replace_with(note)
-    for box in root.find_all(["section", "div", "ol"], class_=re.compile(r"^footnotes")):
+    for box in boxes:
         box.decompose()
     for hr in root.find_all("hr", class_="footnotes-sep"):
         hr.decompose()
@@ -558,8 +563,9 @@ def _tables(soup, root):
         t["class"] = ["ltx_tabular", "ltx_centering", "pf-grid"]
         rows = t.find_all("tr")
         for n, tr in enumerate(rows):
-            head = tr.find_parent("thead") is not None or all(c.name == "th" for c in tr.find_all(["td", "th"]))
-            for c in tr.find_all(["td", "th"]):
+            cells = tr.find_all(["td", "th"])
+            head = tr.find_parent("thead") is not None or all(c.name == "th" for c in cells)
+            for c in cells:
                 cls = ["ltx_td"] + (["ltx_th", "ltx_border_b"] if head else []) + (["ltx_border_tt"] if n == 0 else []) + \
                       (["ltx_border_bb"] if n == len(rows) - 1 else [])
                 c["class"] = cls + [x for x in c.get("class", []) if x.startswith("ltx_align_")]
@@ -612,7 +618,10 @@ def _wrap_inline(soup, el):
 
 
 def _lists(soup, root):
-    for lst in root.find_all(["ul", "ol"]):
+    for lst in [t for t in root.descendants if t.name in ("ul", "ol", "dd")]:
+        if lst.name == "dd":
+            _wrap_inline(soup, lst)
+            continue
         n = int(lst.get("start", 1)) if str(lst.get("start", "1")).isdigit() else 1
         for li in lst.find_all("li", recursive=False):
             _wrap_inline(soup, li)
@@ -622,8 +631,6 @@ def _lists(soup, root):
                 tag.string = f"{n}."
                 li.insert(0, tag)
                 n += 1
-    for dd in root.find_all("dd"):
-        _wrap_inline(soup, dd)
 
 
 # ── the flow and its sections ─────────────────────────────────────────
@@ -656,7 +663,7 @@ def _flow(soup, root):
 
 def _split_p(soup, p):
     p = p.extract()
-    if not p.find(lambda t: t.name in ("table", "figure", "ul", "ol", "pre", "div")):
+    if not any(t.name in ("table", "figure", "ul", "ol", "pre", "div") for t in p.descendants):
         return [p]
     parts, cur = [], soup.new_tag("p")
     for ch in list(p.contents):
@@ -736,11 +743,11 @@ def _sections(soup, art, blocks):
             stack[-1][1].append(b)
     for sec in bib:
         _bibliography(soup, sec)
-    for p in art.find_all("p"):
-        p["class"] = ["ltx_p"]
-    for a in art.find_all("a", href=re.compile(r"^#")):   # [Methods](#methods): the section's own id
-        if a["href"][1:] in anchors:
-            a["href"] = "#" + anchors[a["href"][1:]]
+    for el in [t for t in art.descendants if t.name in ("p", "a")]:
+        if el.name == "p":
+            el["class"] = ["ltx_p"]
+        elif el.get("href", "").startswith("#") and el["href"][1:] in anchors:   # [Methods](#methods): the section's own id
+            el["href"] = "#" + anchors[el["href"][1:]]
 
 
 def _bibliography(soup, sec):
