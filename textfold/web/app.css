@@ -537,7 +537,7 @@ dialog.settings.news { width: min(560px, calc(100vw - 32px)); }
 .news .wn-item { padding: 12px 0; border-bottom: 1px solid var(--line-2); }
 .news .wn-item:last-child { border-bottom: 0; }
 .news .wn-item b { display: block; font: 600 14.5px var(--sans); color: var(--ink); }
-.news .wn-item p { margin: 5px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); }
+.news .wn-item p { margin: 5px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); white-space: pre-line; }   /* (its lines as written) */
 .news .stp-foot a:not(.st-btn) { color: var(--muted); text-decoration: none; }
 .news .stp-foot a:not(.st-btn):hover { color: var(--accent); }
 .news .wn-more { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
