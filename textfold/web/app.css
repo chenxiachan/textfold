@@ -542,6 +542,11 @@ dialog.settings.news { width: min(560px, calc(100vw - 32px)); }
 .news .stp-foot a:not(.st-btn):hover { color: var(--accent); }
 .news .wn-more { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
 .news .wn-more svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+/* a change to act on at once (whatsnew.json: [title, text, {url, label}]): its button under it */
+.news .wn-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; text-decoration: none; }
+.news .wn-link svg, .st-out svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+/* Settings, last: TextFold in the reader's other tools, each a page to open in the browser */
+.st-out { display: inline-flex; align-items: center; gap: 5px; flex: none; text-decoration: none; white-space: nowrap; }
 /* its edit history on the page (app.js, review; the marks: reader.css, .rv): from one place to the next, undo it, edit
    it, generate the text again */
 .rvbar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; flex-wrap: wrap; align-items: center;

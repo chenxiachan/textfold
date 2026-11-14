@@ -79,8 +79,12 @@ class Package(unittest.TestCase):
         self.assertEqual(len({e["version"] for e in got}), len(got))
         for e in got:
             self.assertRegex(e["version"], r"^\d+\.\d+\.\d+$")
-            for lang in ("en", "zh"):
-                self.assertTrue(e[lang] and all(len(x) == 2 and all(isinstance(w, str) and w.strip() for w in x) for x in e[lang]), (e["version"], lang))
+            for lang in ("en", "zh"):   # [title, text], and a link to follow it with: {url (https), label}
+                self.assertTrue(e[lang] and all(len(x) in (2, 3) and all(isinstance(w, str) and w.strip() for w in x[:2]) for x in e[lang]), (e["version"], lang))
+                for x in e[lang]:
+                    if len(x) == 3:
+                        self.assertTrue(x[2]["url"].startswith("https://") and x[2]["label"].strip(), (e["version"], lang))
+                        self.assertEqual([len(y) for y in e["en"]], [len(y) for y in e["zh"]], e["version"])
             self.assertEqual(len(e["en"]), len(e["zh"]), e["version"])
 
     def test_it_goes_into_the_package(self):

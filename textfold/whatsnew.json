@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.10.54",
+    "en": [
+      ["TextFold in your browser", "TextFold's button for Chrome, Brave and Edge is in the Chrome Web Store. One click sends the page you are reading to TextFold as you see it, signed in or past a paywall you pay for, and the folded page opens beside it.", {"url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "Add to Chrome"}],
+      ["Your tools, in Settings", "Settings now ends with the links to TextFold's button for your browser and to TextFold Bridge, its plugin for Obsidian, to find them again whenever you need them."]
+    ],
+    "zh": [
+      ["在浏览器里用 TextFold", "TextFold 的浏览器按钮已上架 Chrome 网上应用店，Chrome、Brave 和 Edge 都能用。点一下，就把正在读的网页按你看到的样子交给 TextFold，登录后的、你订阅的内容都一样，折好的页面在网页旁边打开。", {"url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "添加到 Chrome"}],
+      ["设置里的工具链接", "设置的最后一节放了浏览器按钮和 Obsidian 插件 TextFold Bridge 的链接，以后随时都能找到。"]
+    ]
+  },
+  {
     "version": "0.10.53",
     "en": [
       ["Edit a translation", "Select words in a translation and choose Edit translation: the whole translation opens at them, one sentence a line as in the original. Save it as it is, or have its shorter levels written again from your sentences. Your corrections stay when the text is translated again."],

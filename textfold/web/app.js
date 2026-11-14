@@ -1014,12 +1014,20 @@
   //    the reader was last told of, in a dialog (theirs, in Chinese or else in English); a quiet release only says it is
   //    installed. Settings opens the newest release's words again ──
   const REPO = 'https://github.com/chenxiachan/textfold';
+  // TextFold where the reader already works (Settings, last: to find them again): the browser's button in its store,
+  // and TextFold Bridge, @adalach's plugin, in Obsidian's community plugins (README: Works with your tools)
+  const TOOLS = {
+    browser: 'https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf',
+    obsidian: 'https://community.obsidian.md/plugins/textfold-bridge',
+  };
   function showNews(list) {
     const T = t(), v = list[0].version, words = (e) => e[uiLang] || (uiLang === 'zh-Hant' && e.zh) || e.en || [];
     const dlg = h('dialog', 'settings prefs news'); document.body.append(dlg);
     dlg.innerHTML = `<div class="stp"><header class="stp-head"><h2>${esc(T.wn_title.replace('{v}', v))}</h2><button type="button" class="stp-x" aria-label="${esc(T.close)}" title="${esc(T.close)}">${svg('x')}</button></header>
       <div class="stp-body">${list.map((e) => (list.length > 1 ? `<h3 class="wn-v">TextFold ${esc(e.version)}</h3>` : '') +
-        words(e).map(([title, text]) => `<div class="wn-item"><b>${esc(title)}</b><p>${esc(text)}</p></div>`).join('')).join('')}</div>
+        words(e).map(([title, text, go]) => `<div class="wn-item"><b>${esc(title)}</b><p>${esc(text)}</p>` +
+          (go && /^https:\/\//.test(go.url || '') ? `<a class="st-btn wn-link" href="${esc(go.url)}" target="_blank" rel="noopener">${esc(go.label)}${svg('out')}</a>` : '') +
+          '</div>').join('')).join('')}</div>
       <footer class="stp-foot"><p><a href="${REPO}" target="_blank" rel="noopener">★ ${esc(T.wn_star)}</a></p>
         <a class="st-btn wn-more" href="${REPO}/releases/tag/v${encodeURIComponent(v)}" target="_blank" rel="noopener">${esc(T.wn_more)}${svg('out')}</a>
         <button type="button" class="primary wn-ok">${esc(T.wn_ok)}</button></footer></div>`;
@@ -2069,6 +2077,10 @@
         <section><h3>${esc(t.st_providers)}</h3><div class="st-provider-area">${loaded ? providerSection() : ''}</div></section>
         <section class="st-storage">${storageSection()}</section>
         <section class="st-engine"></section>
+        <section class="st-tools"><h3>${esc(t.st_tools_h)}</h3><div class="st-list">
+          <div class="st-item"><div class="st-main"><b>${esc(t.st_ext)}</b><span class="st-meta">${esc(t.st_ext_meta)}</span></div><a class="st-btn st-out" href="${TOOLS.browser}" target="_blank" rel="noopener">${esc(t.st_ext_open)}${svg('out')}</a></div>
+          <div class="st-item"><div class="st-main"><b>${esc(t.st_obs)}</b><span class="st-meta">${esc(t.st_obs_meta)}</span></div><a class="st-btn st-out" href="${TOOLS.obsidian}" target="_blank" rel="noopener">${esc(t.st_obs_open)}${svg('out')}</a></div>
+        </div></section>
         </div>
         <footer class="stp-foot"><p>${esc(t.key_note)}</p><button type="button" class="primary st-close">${esc(t.st_close)}</button></footer></div>`;
       wire();
