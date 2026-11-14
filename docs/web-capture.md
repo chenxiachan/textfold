@@ -1,6 +1,6 @@
 # A page from the reader's own browser
 
-Status: in TextFold 0.10.40; the extension on its way to the Chrome Web Store (lkfemlafmabkdjedldmjebdpccdaeglf).
+Status: in TextFold 0.10.40; the extension in the Chrome Web Store (lkfemlafmabkdjedldmjebdpccdaeglf).
 
 TextFold fetches a web page without running its scripts and without the reader's sign-in. That misses a page the
 reader can read and TextFold cannot: signed in, past a paywall they pay for, behind a bot wall (Medium, Stack
@@ -108,8 +108,8 @@ a batch file, its key in the registry read back).
 
 ## Not yet
 
-- The extension in the Chrome Web Store (its id lkfemlafmabkdjedldmjebdpccdaeglf, `STORE`, given by the manifest's
-  key): its review. Edge's Add-ons give an id of their own, to let in beside it. Firefox (`browser.runtime.connectNative`, the same host, its manifest
+- Edge's Add-ons (the Chrome Web Store's extension, id lkfemlafmabkdjedldmjebdpccdaeglf, `STORE`, given by the
+  manifest's key, installs in Edge too): they give an id of their own, to let in beside it. Firefox (`browser.runtime.connectNative`, the same host, its manifest
   naming allowed_extensions), Safari (an extension inside a signed app).
 - Chrome on Windows itself: the registry and the batch file are tried by the tests, not yet by a browser there.
 - A page read again: a newer snapshot of a page already in the library (kept beside the old, or replacing it).

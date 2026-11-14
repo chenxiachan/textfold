@@ -9,7 +9,7 @@
   <img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/banner.webp" width="880" alt="Fold it, instead of summarizing it. AI decides what each level leaves out. Every paragraph opens back to the author's words. What TextFold reads: arXiv, PubMed Central, bioRxiv, medRxiv, Wikipedia, GitHub READMEs, any web page, PDF, Word, PowerPoint, Excel, EPUB, HTML, pictures, Markdown, text, CSV and an agent's replies, folded from the full text down to a few words">
 </picture>
 
-🚀 **New: [TextFold in your browser](#works-in-your-browser)!** One click on the browser extension transfers the page you are reading to TextFold.<br>
+🚀 **New: [TextFold in your browser](#works-in-your-browser)!** One click on the browser extension transfers the page you are reading to TextFold. **[Add it from the Chrome Web Store →](https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf)**<br>
 For Chrome · Edge · Brave
 
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-6B5CE7?style=flat-square">
@@ -56,14 +56,13 @@ A button for Chrome, Edge and Brave sends the page you are reading to TextFold a
 
 <img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/browser.gif" width="880" alt="A Wikipedia article in Chrome, sent to TextFold with one click on its button, then folded level by level from the full text into a map of its sections">
 
-**Install it from GitHub.** The button is in review for the Chrome Web Store; until it is there:
+**Install it from the Chrome Web Store.**
 
 1. **Install TextFold 0.10.40 or later** ([download](https://chenxiachan.github.io/textfold/#download)) and open it. It connects itself to Chrome, Edge, Brave and Chromium each time it starts. With the Python package instead: `python3 -m pip install -U textfold`, then `python3 -m textfold capture install` once.
-2. **Get the `extension` folder.** Download the repository [as a ZIP](https://github.com/chenxiachan/textfold/archive/refs/heads/main.zip) and unzip it, or `git clone https://github.com/chenxiachan/textfold.git`. The folder is ready as it is: nothing to build.
-3. **Load it.** Open `chrome://extensions` (`edge://extensions` in Edge), turn on **Developer mode**, choose **Load unpacked**, and pick the `extension` folder.
-4. **Click it on a page.** Pin the TextFold button from the extensions menu (the puzzle piece) and click it on any page. A ✓ says the page is in your library. If the browser cannot reach TextFold, the button opens a page that says what to do.
+2. **Add the button.** Open [TextFold in the Chrome Web Store](https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf) and click **Add to Chrome**. Brave adds it the same way; Edge first asks you to allow extensions from other stores.
+3. **Click it on a page.** Pin the TextFold button from the extensions menu (the puzzle piece) and click it on any page. A ✓ says the page is in your library. If the browser cannot reach TextFold, the button opens a page that says what to do.
 
-Keep the folder where it is: the browser loads the button from it. To update, download it again into the same place and click ↻ on the button's card in `chrome://extensions`. Once the button is in the Chrome Web Store, remove this copy before installing it from there. To see the levels, [connect a model ↓](#connect-a-model).
+The store keeps the button up to date. Loaded it from the repository's `extension` folder before? Remove that copy in `chrome://extensions` first, so that there is one TextFold button. To see the levels, [connect a model ↓](#connect-a-model).
 
 The button reads a page only when you click it, and hands it to TextFold on this computer and to nothing else ([privacy policy](https://chenxiachan.github.io/textfold/privacy.html)). [docs/web-capture.md](https://github.com/chenxiachan/textfold/blob/main/docs/web-capture.md) tells how it works.
 

@@ -3,7 +3,8 @@
 A button that sends the page you are reading to TextFold on this computer, as you see it: signed in, past a paywall
 you pay for, drawn by the page's scripts, with what it keeps in shadow roots and frames. Its article is read in the
 browser the way reading views read a page (Defuddle, Obsidian's Web Clipper's, and Readability, Firefox's: in
-vendor/), and TextFold folds it. Status: in TextFold 0.10.40; on its way to the Chrome Web Store (docs/web-capture.md).
+vendor/), and TextFold folds it. Status: in TextFold 0.10.40, and in the Chrome Web Store
+(https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf; docs/web-capture.md).
 
 ## Use it (Chrome, Edge, Brave)
 
@@ -11,8 +12,9 @@ vendor/), and TextFold folds it. Status: in TextFold 0.10.40; on its way to the 
    starts, it registers the program the browser starts to reach it (TextFold's native messaging host,
    `app.textfold.capture`) for your user, with its own Python, and lets the extension in.
    With TextFold from pip instead (Linux too): `python3 -m textfold capture install`, once.
-2. Add the extension. Until it is in the store: open `chrome://extensions`, turn on **Developer mode**, choose
-   **Load unpacked** and pick this folder.
+2. Add the extension from the Chrome Web Store (Brave the same; Edge allows extensions from other stores first). To
+   run this folder as it is instead (working on it): open `chrome://extensions`, turn on **Developer mode**, choose
+   **Load unpacked** and pick this folder, after removing the store's copy (both have the same id: below).
 3. On any page, click the TextFold button. A ✓ on it says the page is in your library; when TextFold is running, its
    reader opens beside the page. A ! says why not (hover the button). When the browser cannot reach TextFold (not
    installed, older than the extension, moved since it last ran), a page of the extension says what to do and checks

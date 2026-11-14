@@ -9,7 +9,7 @@
   <img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/banner-zh.webp" width="880" alt="折叠，而不是摘要。AI 决定每一层省略什么；每一段都能展开回作者的原话。 TextFold 能读的：arXiv、PubMed Central、bioRxiv、medRxiv、维基百科、GitHub README、任意网页、PDF、Word、PowerPoint、Excel、EPUB、HTML、图片、Markdown、纯文本、CSV，以及 agent 的回答，从全文一路折到几个词">
 </picture>
 
-🚀 **新功能：[在浏览器里用 TextFold](#在浏览器里用)！** 点一下浏览器扩展，就把正在读的网页传给 TextFold。<br>
+🚀 **新功能：[在浏览器里用 TextFold](#在浏览器里用)！** 点一下浏览器扩展，就把正在读的网页传给 TextFold。**[从 Chrome 网上应用店添加 →](https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf)**<br>
 支持 Chrome · Edge · Brave
 
 <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-6B5CE7?style=flat-square">
@@ -56,14 +56,13 @@ Chrome、Edge 和 Brave 上的一个按钮，把你正在读的网页按你看�
 
 <img src="https://raw.githubusercontent.com/chenxiachan/textfold/main/docs/assets/browser.gif" width="880" alt="Chrome 里的一篇维基百科文章，点一下 TextFold 按钮传进 TextFold，再一层层从全文折叠成章节地图">
 
-**从 GitHub 安装。** 按钮正在 Chrome 网上应用店审核，在那之前：
+**从 Chrome 网上应用店安装。**
 
 1. **安装 TextFold 0.10.40 或更新版本**（[下载](https://chenxiachan.github.io/textfold/zh.html#download)）并打开。它每次启动都会自动连上 Chrome、Edge、Brave 和 Chromium。用 Python 包的话：`python3 -m pip install -U textfold`，再运行一次 `python3 -m textfold capture install`。
-2. **拿到 `extension` 文件夹。** [下载仓库 ZIP](https://github.com/chenxiachan/textfold/archive/refs/heads/main.zip) 并解压，或者 `git clone https://github.com/chenxiachan/textfold.git`。这个文件夹直接就能用，不需要构建。
-3. **加载它。** 打开 `chrome://extensions`（Edge 里是 `edge://extensions`），打开 **开发者模式**，点 **加载未打包的扩展程序**，选 `extension` 文件夹。
-4. **在网页上点它。** 从扩展菜单（拼图图标）把 TextFold 按钮固定到工具栏，然后在任何网页上点它。按钮上出现 ✓，说明网页已存进文献库。浏览器连不上 TextFold 时，按钮会打开一页，说明该怎么做。
+2. **添加按钮。** 打开 [Chrome 网上应用店里的 TextFold](https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf)，点 **添加至 Chrome**。Brave 也一样；Edge 会先请你允许来自其他商店的扩展。
+3. **在网页上点它。** 从扩展菜单（拼图图标）把 TextFold 按钮固定到工具栏，然后在任何网页上点它。按钮上出现 ✓，说明网页已存进文献库。浏览器连不上 TextFold 时，按钮会打开一页，说明该怎么做。
 
-文件夹不要挪走，浏览器是从它加载按钮的。要更新，就重新下载到原处，再在 `chrome://extensions` 里点按钮卡片上的 ↻。按钮上架 Chrome 网上应用店后，先移除这个副本，再从商店安装。要看到各层，先[连接模型 ↓](#连接模型)。
+商店会自动更新按钮。之前从仓库的 `extension` 文件夹加载过的话，先在 `chrome://extensions` 里移除那个副本，只留一个 TextFold 按钮。要看到各层，先[连接模型 ↓](#连接模型)。
 
 按钮只在你点它时读取网页，只交给本机的 TextFold，不交给任何别处（[隐私政策](https://chenxiachan.github.io/textfold/privacy.html#zh)）。原理见 [docs/web-capture.md](https://github.com/chenxiachan/textfold/blob/main/docs/web-capture.md)。
 
