@@ -1113,7 +1113,36 @@
         toast.querySelector('.g-stage').textContent = stageOf(j, T2);
         toast.querySelector('.g-stop').disabled = !!j.stopping;
         toast.querySelector('.sb-prog i').style.width = `${pct(j)}%`;
-        if (j.status === 'done') reopen(j.lang);
+        if (j.status === 'done') { if (shownHere(j)) arrive(j, true); else reopen(j.lang); }
+        else if (j.shown) arrive(j, false);
+      };
+      // A language translated for the first time is shown as it is made (pipeline.py: job.shown, the sections written
+      // so far): the page opens in it once its first section is in (once per job: a reader who goes back to the text's
+      // own words stays there), and each section after is put in where it is read, with no new page; when it is
+      // done, the last ones too. Elsewhere, as before: done, the page opens in it.
+      let asked = 0, asking = null;
+      const shownHere = (j) => !!j.shown && window.__reader && window.__reader.lang === j.lang;
+      const arrive = (j, done) => {
+        const R = window.__reader, key = `tf-shown:${j.id}`;
+        if (!R || !R.addTranslation) return;
+        if (R.lang !== j.lang) {
+          let opened = null;
+          try { opened = sessionStorage.getItem(key); } catch { /* private window */ }
+          if (!opened) { try { sessionStorage.setItem(key, '1'); } catch { /* private window */ } reopen(j.lang); return; }
+        }
+        if (asking) { if (done) asking.then(() => arrive(j, true)); return; }   // (the last ones asked once the one under way is in)
+        if (!done && j.shown <= asked) return;
+        asked = j.shown;
+        const have = R.translated(j.lang);
+        asking = api('/api/translation/parts', { id: PAPER.id, lang: j.lang, units: have.units, chunks: have.chunks })
+          .then((got) => {
+            R.addTranslation(j.lang, got);
+            if (!done) return;
+            toast.hidden = true;
+            if (PAPER.gaps) PAPER.gaps[j.lang] = (R.gaps || {})[j.lang] || 0;   // (what is left untranslated, asked for as before)
+          })
+          .catch(() => { if (done) reopen(j.lang); })
+          .finally(() => { asking = null; });
       };
       update.fail = (e) => closable(t().failed, errText(e.message), true);
       return update;
@@ -1303,6 +1332,74 @@
       save.onclick = () => keep(!!modelName);
       if (only) only.onclick = () => keep(false);
     }
+    // A translation put right where it is read (corrections.py), from Edit translation on words selected in it: the
+    // sentences selected, each under the text's own words, saved as written (no model is asked); and the words
+    // selected, a term, written otherwise wherever they occur in this text, and so in the translation made again (a
+    // name it got wrong). A section's line, or a line the model wrote (Takeaway), offers the term alone.
+    async function editTranslation(a) {
+      const T = t(), lang = a.lang;
+      if (jobFor(PAPER.id)) { alert(T.ed_busy); return; }
+      let got = null;
+      if (a.unit && a.tokens && (a.sents || []).length) {
+        try { got = await api(`/api/translation/${encodeURIComponent(PAPER.id)}?lang=${encodeURIComponent(lang)}&unit=${encodeURIComponent(a.unit)}&sents=${a.sents.join(',')}`); }
+        catch (x) { alert(errText(x.message)); return; }
+      }
+      const words = ((a.shown && a.shown.exact) || (a.quote && a.quote.exact) || '').replace(/\s+/g, ' ').trim();
+      const term = words && words.length <= 40 && !/[.!?。！？]\s*\S/.test(words) && !words.includes('$') ? words : '';
+      if (!got && !term) return;
+      const dlg = h('dialog', 'settings prefs edtext trfix'); document.body.append(dlg);
+      const pairs = got ? got.lines.map((l, i) => `<div class="tr-pair"><p class="tr-src">${esc(got.source[i])}</p>` +
+        `<textarea class="tr-line" data-k="${got.sents[i]}" lang="${esc(lang)}" rows="2" spellcheck="false">${esc(l)}</textarea></div>`).join('') : '';
+      const marks = got && got.marks.length ? `<p class="tr-marks">${esc(T.tr_marks)} ${got.marks.map((m) => `<code>⟦${esc(m.n)}⟧</code> ${esc(m.what)}`).join(' · ')}</p>` : '';
+      const termRow = term ? `<div class="tr-term"><label><span>${esc(T.tr_term)}</span> <b class="tr-old" lang="${esc(lang)}">${esc(term)}</b> →
+        <input class="tr-new" lang="${esc(lang)}" value="${esc(term)}" spellcheck="false"></label><button type="button" class="st-btn tr-go">${esc(T.tr_term_go)}</button>
+        <p class="st-note">${esc(T.tr_term_tip)}</p></div>` : '';
+      dlg.innerHTML = `<div class="stp"><header class="stp-head"><h2>${esc(T.tr_title)}</h2><button type="button" class="stp-x" aria-label="${esc(T.close)}" title="${esc(T.close)}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8"/></svg></button></header>
+        <div class="stp-body"><p class="st-note">${esc(T.tr_note)}</p>${pairs}${marks}${termRow}</div>
+        <footer class="stp-foot"><p class="tr-said" role="status"></p><button type="button" class="st-btn ed-cancel">${esc(T.cancel)}</button>` +
+        (got ? `<button type="button" class="primary tr-save">${esc(T.save)}</button>` : '') + `</footer></div>`;
+      dlg.addEventListener('close', () => dlg.remove());
+      dlg.querySelector('.stp-x').onclick = dlg.querySelector('.ed-cancel').onclick = () => dlg.close();
+      dlg.showModal();
+      const lines = [...dlg.querySelectorAll('.tr-line')], said = dlg.querySelector('.tr-said'), buttons = [...dlg.querySelectorAll('button')];
+      for (const ta of lines) { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; }
+      // the words selected, selected in their line, else the first line ready to be written in
+      const at = lines.find((ta) => term && ta.value.includes(term));
+      const first = at || lines[0] || dlg.querySelector('.tr-new');
+      if (first) { first.focus(); if (at) at.setSelectionRange(at.value.indexOf(term), at.value.indexOf(term) + term.length); }
+      const failed = (x) => {
+        buttons.forEach((b) => { b.disabled = false; });
+        said.textContent = x.message === 'markers' ? T.tr_err_markers : x.message === 'not-found' ? T.tr_err_none.replace('{w}', term)
+          : x.message === 'busy' ? T.ed_busy : errText(x.message);
+      };
+      // the sentences as written (those changed), saved first: a term replaced next is replaced in them too
+      const saveLines = async () => {
+        const changed = Object.fromEntries(lines.filter((ta, i) => ta.value !== got.lines[i]).map((ta) => [ta.dataset.k, ta.value]));
+        if (Object.keys(changed).length) await api('/api/translation', { id: PAPER.id, lang, unit: a.unit, lines: changed });
+      };
+      const done = () => { dlg.close(); reopen(lang); };
+      const save = dlg.querySelector('.tr-save');
+      if (save) save.onclick = async () => {
+        buttons.forEach((b) => { b.disabled = true; });
+        try { await saveLines(); done(); } catch (x) { failed(x); }
+      };
+      const go = dlg.querySelector('.tr-go'), input = dlg.querySelector('.tr-new');
+      if (go) {
+        const ready = () => { go.disabled = !input.value.trim() || input.value.trim() === term; };
+        input.addEventListener('input', ready);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && !go.disabled) { e.preventDefault(); go.click(); } });
+        ready();
+        go.onclick = async () => {
+          buttons.forEach((b) => { b.disabled = true; });
+          try {
+            if (got) await saveLines();
+            const r = await api('/api/translation/term', { id: PAPER.id, lang, old: term, new: input.value.trim() });
+            said.textContent = T.tr_done.replace('{n}', r.places);
+            setTimeout(done, 700);
+          } catch (x) { failed(x); }
+        };
+      }
+    }
     // Its edit history, on the page itself (from the top bar: PAPER.history): each place the edits since it was last
     // generated changed (placesOf), found where it is read (local.places) and marked in the text at Full (reader.js,
     // setReview), with a bar to go from one to the next (4 / 14), undo it (the text saved with its words as they were)
@@ -1393,6 +1490,7 @@
       },
       fill(lang) { fillGaps(lang, true); },
       editText,
+      editTranslation,
       // questions go to an agent on this computer, which can look them up on the web (reader.js: the switch by a question)
       askAgent() {
         const d = modelData, m = d && (d.models || []).find((x) => x.id === (d.askModel || d.selected));

@@ -1753,6 +1753,29 @@
     morph(() => { lang = l; applyLang(); renderAll(hot, band); }, defaultAnchor());
   }
 
+  // a translation coming in as it is made (app.js, while a language is translated for the first time, section by
+  // section): its paragraphs and sections put in, and drawn at once where it is the language read, the paragraph at
+  // the reading line staying where it is; what has none yet reads in the text's own words
+  function addTranslation(l, got) {
+    const units = Object.entries(got.units || {}).filter(([uid]) => U[uid]);
+    let added = 0;   // (paragraphs the page had none for: counted among the language's gaps when it opened)
+    for (const [uid, z] of units) { if (!(U[uid].tr && U[uid].tr[l])) added++; (U[uid].tr ||= {})[l] = z; }
+    if (GAPS[l]) { GAPS[l] = Math.max(0, GAPS[l] - added); if (!GAPS[l]) delete GAPS[l]; }
+    for (const c of D.chunks) if (got.chunks && got.chunks[c.id]) (c.tr ||= {})[l] = got.chunks[c.id];
+    if (got.title) (D.meta.titles ||= {})[l] = got.title;
+    if (!AVAIL.includes(l)) AVAIL.push(l);
+    if (l !== lang || busy || !units.length && !got.chunks) return;
+    const keep = unitAtReading(), top = keep && keep.getBoundingClientRect().top;
+    applyLang();
+    const near = unitsNear(innerHeight, innerHeight);
+    for (const [uid] of units) if (unitEl.has(uid)) renderUnit(uid, near.has(uid));
+    if (keep && keep.isConnected) scrollBy(0, keep.getBoundingClientRect().top - top);
+  }
+  // the paragraphs and sections that have a translation in l (what the page need not be sent again)
+  function translated(l) {
+    return { units: Object.keys(U).filter((uid) => U[uid].tr && U[uid].tr[l]), chunks: D.chunks.filter((c) => c.tr && c.tr[l]).map((c) => c.id) };
+  }
+
   function toggleUnit(uid) {
     if (busy) return;
     const el = unitEl.get(uid);
@@ -2274,14 +2297,21 @@
     selbar.innerHTML = `<button type="button" data-act="hl">${esc(t.n_highlight)}</button>${swatches('hl', toneOf({ anchor: anchors[0] }), 0, lastShade)}` +
       `<button type="button" data-act="note">${esc(t.n_note)}</button>` +
       `<button type="button" data-act="ask">${esc(t.n_ask)}</button>` +
-      // the author's words, which the reader can put right in any document (app.js, editText)
-      (window.DRApp && window.DRApp.editText && anchors[0].tokens ? `<button type="button" data-act="edit">${esc(t.ed_fix)}</button>` : '');
+      // the author's words, which the reader can put right in any document (app.js, editText); in a translation, the
+      // translation itself (editTranslation): its sentences, or a term wherever it occurs (a section's line: the term)
+      (fixable(anchors[0]) ? `<button type="button" data-act="edit">${esc(anchors[0].lang !== BASE ? t.tr_fix : t.ed_fix)}</button>` : '');
     selbar.hidden = false;
     const r = getSelection().getRangeAt(0).getBoundingClientRect(), w = selbar.offsetWidth;
     selbar.style.left = `${Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
     selbar.style.top = `${r.top > 70 ? r.top - 44 : r.bottom + 8}px`;
   }
   function hideSelbar() { selbar.hidden = true; selAnchors = null; }
+  function fixable(a) {
+    const app = window.DRApp;
+    if (!app || !app.editText) return false;
+    if (a.lang === BASE) return !!a.tokens;
+    return !!app.editTranslation && (a.unit ? !!(a.tokens || a.shown) : a.on === 'summary' && !!a.tokens);
+  }
   // a dot for each shade a highlight may have (data-s), in the colour of the level it is made at; in a note opened, its
   // own is on; over a selection, the one Highlight takes is ringed
   function swatches(act, tone, on, last) {
@@ -2297,7 +2327,8 @@
     if (act === 'edit') {
       hideSelbar();
       getSelection().removeAllRanges();
-      window.DRApp.editText(anchors[0].quote.exact);
+      if (anchors[0].lang !== BASE) window.DRApp.editTranslation(anchors[0]);
+      else window.DRApp.editText(anchors[0].quote.exact);
       return;
     }
     if (act === 'hl' && b.dataset.s) useShade(+b.dataset.s);
@@ -4328,14 +4359,18 @@ math { font-size: 1.05em; }
   if (!D.app && AVAIL.length < 2) document.querySelector('.langpick').remove();
 
   // ── a figure, enlarged: a click on its picture opens it over the page with its caption (as the reader sees it now:
-  //    this language, this level); Esc, a click beside it or × closes it. A picture larger than the screen opens to
-  //    fit, and a click on it shows it at full size, to scroll. Beside ×, its picture is copied or saved ──
+  //    this language, this level); Esc, a click beside it or × closes it. It opens to fit the screen and zooms as the
+  //    PDF beside the text does: − and + (and the keys), ⌘ or Ctrl and the wheel, or a pinch, around the pointer; a
+  //    click on it zooms in there (at least to its own size) and back. Zoomed, it is dragged, or scrolled, to see the
+  //    rest. A drawing (svg) stays sharp. Beside ×, its picture is copied or saved ──
   const lightbox = h('div', 'lightbox');
   lightbox.hidden = true;
   lightbox.setAttribute('role', 'dialog');
   lightbox.setAttribute('aria-modal', 'true');
   document.body.append(lightbox);
   let lightboxFrom = null, captionPress = false;
+  const LB_MAX = 8;   // (times the size it opens at)
+  let lbZoom = null;   // the picture shown: { by(f, x, y), fit() }
   const LB_ICONS = {
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     save: '<path d="M12 3v12m-5-5 5 5 5-5M5 20h14"/>',
@@ -4406,7 +4441,11 @@ math { font-size: 1.05em; }
     const said = h('div', 'lb-said'), bar = h('div', 'lb-actions');
     said.setAttribute('role', 'status');
     const say = (s) => { said.textContent = s; clearTimeout(said._t); said._t = setTimeout(() => { said.textContent = ''; }, 2400); };
-    bar.append(lbButton('copy', T[ui].lb_copy, () => copyPic(pic).then(() => say(T[ui].lb_copied), () => say(T[ui].lb_failed))),
+    const zo = h('button', 'lb-z', '−'), zl = h('button', 'lb-zl', '100%'), zi = h('button', 'lb-z', '+');
+    for (const [b, t] of [[zo, T[ui].nb_zoom_out], [zl, T[ui].pp_fit], [zi, T[ui].nb_zoom_in]]) { b.type = 'button'; b.title = t; b.setAttribute('aria-label', t); }
+    const zoom = h('div', 'lb-zoom');
+    zoom.append(zo, zl, zi);
+    bar.append(zoom, lbButton('copy', T[ui].lb_copy, () => copyPic(pic).then(() => say(T[ui].lb_copied), () => say(T[ui].lb_failed))),
       lbButton('save', T[ui].lb_save, () => savePic(pic, fig).catch(() => say(T[ui].lb_failed))), x);
     lightbox.replaceChildren(stage, bar, said);
     if (cap) {
@@ -4419,15 +4458,51 @@ math { font-size: 1.05em; }
       }
       lightbox.setAttribute('aria-label', c.textContent || 'Figure');
     }
-    lightbox.classList.remove('lb-full');
     captionPress = false;
     lightbox.hidden = false;
     document.documentElement.classList.add('lb-open');
     lightboxFrom = document.activeElement;
     x.focus({ preventScroll: true });
+    // the zoom: a scale and a shift of the picture as it opened (fitted, centred in its stage), kept on the screen
+    const z = { k: 1, x: 0, y: 0 };
+    const show = () => {
+      shown.style.transform = z.k === 1 ? '' : `translate(${z.x.toFixed(1)}px, ${z.y.toFixed(1)}px) scale(${z.k.toFixed(4)})`;
+      lightbox.classList.toggle('lb-zoomed', z.k > 1);
+      zl.textContent = `${Math.round(z.k * 100)}%`;
+      zo.disabled = z.k <= 1;
+      zi.disabled = z.k >= LB_MAX;
+    };
+    const keep = () => {   // never further than shows its edge a little way in from the screen's
+      const mx = Math.max(0, (shown.offsetWidth * z.k - innerWidth) / 2 + 48), my = Math.max(0, (shown.offsetHeight * z.k - innerHeight) / 2 + 48);
+      z.x = Math.max(-mx, Math.min(mx, z.x));
+      z.y = Math.max(-my, Math.min(my, z.y));
+    };
+    const to = (k, cx, cy) => {   // to scale k, the point (cx, cy) of the screen staying where it is
+      k = Math.min(LB_MAX, Math.max(1, k));
+      const r = stage.getBoundingClientRect(), ox = (cx ?? r.left + r.width / 2) - (r.left + r.width / 2), oy = (cy ?? r.top + r.height / 2) - (r.top + r.height / 2);
+      z.x = ox - (ox - z.x) * (k / z.k);
+      z.y = oy - (oy - z.y) * (k / z.k);
+      z.k = k;
+      if (k === 1) z.x = z.y = 0;
+      keep();
+      show();
+    };
+    lbZoom = { by: (f, cx, cy) => to(z.k * f, cx, cy), fit: () => to(1), pan: (dx, dy) => { z.x += dx; z.y += dy; keep(); show(); }, get k() { return z.k; } };
+    zo.addEventListener('click', (e) => { e.stopPropagation(); to(z.k / 1.5); });
+    zi.addEventListener('click', (e) => { e.stopPropagation(); to(z.k * 1.5); });
+    zl.addEventListener('click', (e) => { e.stopPropagation(); to(1); });
+    // a click on it: in, where it was clicked, to its own size when that is larger (a photo's details), else twice
+    // as large; and back
+    shown.addEventListener('click', (e) => {
+      if (lightbox._dragged) return;
+      const own = shown.tagName.toLowerCase() === 'img' && shown.naturalWidth ? shown.naturalWidth / shown.offsetWidth : 0;
+      to(z.k > 1 ? 1 : Math.max(2, Math.min(LB_MAX, own)), e.clientX, e.clientY);
+    });
+    show();
   }
   function closeLightbox() {
     lightbox.hidden = true;
+    lbZoom = null;
     lightbox.replaceChildren();
     document.documentElement.classList.remove('lb-open');
     if (lightboxFrom && lightboxFrom.focus) lightboxFrom.focus({ preventScroll: true });
@@ -4441,13 +4516,54 @@ math { font-size: 1.05em; }
     const fromCaption = e.detail > 0 && captionPress;
     captionPress = false;
     if (fromCaption || e.target.closest('.lb-cap')) return;
-    const pic = e.target.closest('.lb-pic');
-    if (pic && pic.tagName.toLowerCase() === 'img') {   // larger than the screen: full size, to scroll; and back
-      const fits = pic.naturalWidth <= pic.clientWidth + 2 && pic.naturalHeight <= pic.clientHeight + 2;
-      if (!fits || lightbox.classList.contains('lb-full')) { lightbox.classList.toggle('lb-full'); return; }
-    }
-    if (!pic) closeLightbox();
+    const dragged = lightbox._dragged;
+    lightbox._dragged = false;
+    if (dragged || e.target.closest('.lb-pic, .lb-actions')) return;   // (the picture zooms itself: openLightbox)
+    closeLightbox();
   });
+  // ⌘/Ctrl and the wheel, or a pinch: the picture zooms around the pointer; the wheel alone moves a picture zoomed in
+  lightbox.addEventListener('wheel', (e) => {
+    if (!lbZoom) return;
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
+    if (e.ctrlKey || e.metaKey) lbZoom.by(Math.exp(-e.deltaY * unit * 0.004), e.clientX, e.clientY);   // (as the PDF beside the text)
+    else if (lbZoom.k > 1) lbPan(-e.deltaX * unit, -e.deltaY * unit);
+  }, { passive: false });
+  let lbPinch = 1;   // (Safari's pinch)
+  lightbox.addEventListener('gesturestart', (e) => { e.preventDefault(); lbPinch = 1; });
+  lightbox.addEventListener('gesturechange', (e) => { e.preventDefault(); if (lbZoom) lbZoom.by(e.scale / lbPinch, e.clientX, e.clientY); lbPinch = e.scale; });
+  lightbox.addEventListener('gestureend', (e) => e.preventDefault());
+  // dragged with the mouse or a finger when zoomed in; two fingers on a touch screen pinch it
+  const lbPointers = new Map();
+  let lbDrag = null;
+  const lbPan = (dx, dy) => { if (lbZoom) lbZoom.pan(dx, dy); };
+  lightbox.addEventListener('pointerdown', (e) => {
+    if (!lbZoom || !e.target.closest('.lb-pic')) return;
+    lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (lbPointers.size === 1) lbDrag = { x: e.clientX, y: e.clientY, moved: false };
+    e.target.closest('.lb-pic').setPointerCapture?.(e.pointerId);
+  });
+  lightbox.addEventListener('pointermove', (e) => {
+    const was = lbPointers.get(e.pointerId);
+    if (!was || !lbZoom) return;
+    if (lbPointers.size === 2) {   // a pinch: the two fingers' distance, around their middle
+      const [a, b] = [...lbPointers.values()], other = a === was ? b : a;
+      const d0 = Math.hypot(was.x - other.x, was.y - other.y), d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      if (d0 > 0) lbZoom.by(d1 / d0, (e.clientX + other.x) / 2, (e.clientY + other.y) / 2);
+      lbDrag = null;
+      lightbox._dragged = true;
+    } else if (lbDrag && lbZoom.k > 1) {
+      const dx = e.clientX - was.x, dy = e.clientY - was.y;
+      if (lbDrag.moved || Math.abs(e.clientX - lbDrag.x) + Math.abs(e.clientY - lbDrag.y) > 4) {
+        lbDrag.moved = lightbox._dragged = true;
+        lbPan(dx, dy);
+      } else return;
+    }
+    lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  });
+  const lbUp = (e) => { lbPointers.delete(e.pointerId); if (!lbPointers.size) lbDrag = null; };
+  lightbox.addEventListener('pointerup', lbUp);
+  lightbox.addEventListener('pointercancel', lbUp);
 
   // ── where this text was being read (kept in this browser, the last 300 texts): its level and the paragraph at the
   //    reading line, saved as the reader scrolls or zooms. Opened again (and with no place asked for in its link),
@@ -4876,8 +4992,12 @@ math { font-size: 1.05em; }
   });
 
   addEventListener('keydown', (e) => {
-    if (!lightbox.hidden) {   // an enlarged figure takes the keys: Esc closes it, the rest do nothing behind it
+    if (!lightbox.hidden) {   // an enlarged figure takes the keys: Esc closes it, + − and 0 zoom it, the rest do nothing behind it
+      const mod = e.metaKey || e.ctrlKey || e.altKey;
       if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
+      else if (lbZoom && !mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); lbZoom.by(1.5); }
+      else if (lbZoom && !mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); lbZoom.by(1 / 1.5); }
+      else if (lbZoom && !mod && e.key === '0') { e.preventDefault(); lbZoom.fit(); }
       return;
     }
     if (e.target.closest && e.target.closest('input, textarea, [contenteditable]')) return;
@@ -5057,7 +5177,7 @@ math { font-size: 1.05em; }
     document.title = name || D.meta.title;
     applyLang();
   }
-  window.__reader = { setLevel, setLang, setUi, rename, review: setReview, reviewGo, get ui() { return ui; }, zoomBy,
+  window.__reader = { setLevel, setLang, setUi, rename, review: setReview, reviewGo, get ui() { return ui; }, zoomBy, addTranslation, translated, get gaps() { return GAPS; },
     get compared() { if (!cmp || !cmp.grams) return null; const ids = [...order.keys()]; return { units: ids.length, found: ids.filter((id) => locate(id)).length, words: cmp.words.length }; }, get level() { return level; }, get lang() { return lang; }, get pos() { return pos; },
     get staged() { return !!stage; }, get _caps() { return caps; }, get keyframes() { return caps.map((c) => (c ? c.P.size : 0)); },
     // holding the zoom at a position, as a hand would (for looking at the motion frame by frame)

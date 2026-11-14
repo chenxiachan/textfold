@@ -123,6 +123,18 @@ other's marks alone.
 - A conversation keeps the level it was started at (`anchor.level`), shown with it: what was selected may not be on
   screen at another level.
 
+## Corrections of a translation
+
+The file also keeps the reader's corrections of a translation, made where it is read (**Edit translation**,
+`corrections.py`), by language: `"corrections": {"zh": {"lines": [...], "terms": [...]}}`. A line is a sentence of a
+paragraph's translation as the reader wrote it, `{"unit", "k", "source", "text"}`: `k` the sentence, `source` the
+sentence of the text it translates, in the text's own words, and `text` the translation, its formulas and citations
+as markers `⟦a12⟧`. A term is `[old, new]`, the translation's word and the reader's, written so wherever it occurs.
+They are not notes: the exports of the notes leave them out. They are laid over the translation each time it is made again: a line
+while its `source` is still the sentence of the text, a term always. A note made in the translation stays on its
+words when the translation is corrected: its `tokens`, `sents` and `quote` are those of the place its words are now,
+or of the sentences it was on when its words were rewritten.
+
 ## When the text changes
 
 A Markdown document can be replaced by its edited text under the same id (`POST /api/import` with `id`), and a PDF

@@ -17,9 +17,10 @@ the opening or a heading asks for every
 section. A translation's prompt also numbers the formulas, links and other atoms of the whole text in order, so a
 section after an atom added or taken out is translated again too.
 """
+import time
 import urllib.error
 
-from . import biorxiv, epmc, github, ladder, links, llm, local, models, notes, store, translate, webpage, wiki
+from . import biorxiv, corrections, epmc, github, ladder, links, llm, local, models, notes, store, translate, webpage, wiki
 from .fetch import fetch
 
 
@@ -28,7 +29,28 @@ def task(cfg, name):
     return models.for_task(llm.spec_of(cfg), name)
 
 
-def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=lambda *a: None, stop=None):
+SHOW_EVERY = 1.5   # seconds: a translation shown as it is made is written at most this often (and its first section at once)
+
+
+def _shown(pid, doc, lang, base, model, shown):
+    """What translate.build tells each time a section is in: the translation so far written (partial), for the page to
+    show; at most every SHOW_EVERY seconds, the first at once. shown(n): the sections written."""
+    state = {"at": 0.0, "n": 0}
+
+    def sink():
+        now = time.monotonic()
+        state["n"] += 1
+        if state["at"] and now - state["at"] < SHOW_EVERY:
+            return
+        state["at"] = now
+        corrections.apply(pid, doc, lang)   # (the reader's own corrections, on what is shown too)
+        store.save_tr(doc, lang, base, model, partial=True)
+        if shown:
+            shown(sum(1 for c in doc["chunks"] if lang in c.get("tr", {})))
+    return sink
+
+
+def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=lambda *a: None, stop=None, shown=None):
     def check():
         if stop is not None and stop.is_set():
             raise llm.Stopped()
@@ -85,11 +107,20 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
         if lang == "en":   # notes made on the ladder of a text in another language said "en" (it was always English)
             notes.settle_base(pid, base)
         tr = store.read(pid, f"tr-{lang}")
-        if force or tr is None or tr.get("base") != en["version"]:
+        if force or tr is None or tr.get("base") != en["version"] or tr.get("partial"):
             check()
             again = force and not (replaced and tr is None)
-            translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop)
+            terms = [tuple(t) for t in corrections.kept(pid, lang).get("terms") or []]
+            # a language translated for the first time is shown as it is made, section by section (shown: how many
+            # are, for the reader's page); one made again stays as it was until the new one is whole
+            sink = None
+            if not force and (tr is None or (tr.get("partial") and tr.get("base") == en["version"])):
+                if tr is not None:
+                    store.apply_tr(doc, lang, tr)   # (what a translation stopped before had: in, while the rest comes)
+                sink = _shown(pid, doc, lang, en["version"], model, shown)
+            translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop, terms=terms, sink=sink)
             check()
+            corrections.apply(pid, doc, lang)   # (the reader's own: a sentence rewritten, a term written otherwise)
             store.save_tr(doc, lang, en["version"], model)
         elif cfg is not None:
             store.apply_tr(doc, lang, tr)
@@ -98,6 +129,7 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
                 translate.fill(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), stop=stop)
                 was = tr.get("model") or model
                 check()
+                corrections.apply(pid, doc, lang)
                 store.save_tr(doc, lang, en["version"], was if was == model else f"{was} + {model}")
     local.settle(pid)   # (its text edited: once generated in every language it was in, its edit history goes)
     progress("done", 1, 1)

@@ -311,12 +311,15 @@ def save_en(doc, model):
     })
 
 
-def save_tr(doc, lang, base, model):
+def save_tr(doc, lang, base, model, partial=False):
+    """A translation written; partial: while it is made, the sections translated so far (read as they are, and
+    made whole the next time the language is generated, from the replies kept)."""
     write(doc["meta"]["id"], f"tr-{lang}", {
         "version": stamp(), "base": base, "model": model,
         "units": {uid: u["tr"][lang] for uid, u in doc["units"].items() if lang in u.get("tr", {})},
         "chunks": {c["id"]: c["tr"][lang] for c in doc["chunks"] if lang in c.get("tr", {})},
         "title": doc["meta"].get("titles", {}).get(lang),
+        **({"partial": True} if partial else {}),
     })
 
 

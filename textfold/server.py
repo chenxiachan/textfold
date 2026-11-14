@@ -19,6 +19,13 @@
   GET  /api/text/<id>         {text, original}: a document's text as Markdown (local.text_of), for the reader to put
                               right (a PDF's OCR, a page's words) and send back to /api/import with its id; original: the text it had
                               when it was last generated, before the edits since (null: none; local.original)
+  GET  /api/translation/<id>  ?lang=&unit=&sents=0,1: a paragraph's translated sentences to put right where they are read,
+                              with the text's own beside them (corrections.lines_of)
+  POST /api/translation/parts {id, lang, units, chunks}: a translation as it is made (partial), its paragraphs and
+                              sections but those named (the page has them): {units, chunks, title, partial}
+  POST /api/translation       {id, lang, unit, lines: {k: line}}: those sentences as the reader wrote them; POST
+                              /api/translation/term {id, lang, old, new}: a term written otherwise wherever it occurs. Both
+                              kept with the notes and laid over the translation when it is made again (corrections.py)
   POST /api/places            {id, spans: [[from, to], ...]}: where each place of that text is read on the page
                               ({places: [{words: [{unit, tokens}], at: {unit, token, after}} | {section} | null]}:
                               local.places), the edit history's changes marked on it
@@ -108,7 +115,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, agents, bridges, build, engine, fetch, fold, ids, langs, library, llm, local, models, news, notes, office, pdf, pdfdoc, pdffigs, pdftext, pipeline, providers, record, store, zotero
+from . import __version__, agents, bridges, build, corrections, engine, fetch, fold, ids, langs, library, llm, local, models, news, notes, office, pdf, pdfdoc, pdffigs, pdftext, pipeline, providers, record, store, zotero
 
 STATIC = {"app.js": "text/javascript", "app.css": "text/css", "reader.js": "text/javascript",
           "reader.css": "text/css", "i18n.js": "text/javascript", "tutorial.js": "text/javascript", "webmcp.js": "text/javascript",
@@ -362,7 +369,8 @@ class Jobs:
                     job["model"] = spec["id"]
                 except RuntimeError:   # none: the paper is still fetched and parsed, to be read as written
                     spec = None
-                pipeline.generate(job["pid"], job["lang"], spec, force=job["force"], progress=self._progress(job, stop), log=self._log(job), stop=stop)
+                pipeline.generate(job["pid"], job["lang"], spec, force=job["force"], progress=self._progress(job, stop), log=self._log(job), stop=stop,
+                                  shown=lambda n: job.update(shown=n))   # (a translation's sections the page can show already)
                 job["status"] = "done"
             except Exception as e:  # shown in the app; the traceback stays in the job log
                 if str(e) == "no-html" and not stop.is_set():
@@ -753,6 +761,17 @@ def make_handler(jobs):
                     if text is None:
                         return self.json({"error": "no text to edit"}, 404)
                     return self.json({"text": text, "original": local.original(pid)})
+                m = re.fullmatch(r"/api/translation/([\w.-]+)", u.path)   # (a translation's sentences, to put right)
+                if m:
+                    q = parse_qs(u.query)
+                    pid, lang, unit = m.group(1), (q.get("lang") or [""])[0], (q.get("unit") or [""])[0]
+                    sents = [int(x) for x in (q.get("sents") or [""])[0].split(",") if x.strip().isdigit()]
+                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
+                        return self.json({"error": "no such paper"}, 404)
+                    try:
+                        return self.json(corrections.lines_of(pid, lang, unit, sents))
+                    except ValueError as e:
+                        return self.json({"error": str(e)}, 404)
                 m = re.fullmatch(r"/api/doc/([\w.-]+)", u.path)   # (a document not folded yet: its local levels, said so)
                 if m:
                     pid, lang = m.group(1), (parse_qs(u.query).get("lang") or [None])[0]   # (none: the text's own)
@@ -903,6 +922,32 @@ def make_handler(jobs):
                     except ValueError:
                         return self.json({"error": "not-markdown"}, 400)
                     return self.json({"paper": pid, "title": json.loads(store.read_text(store.pdir(pid) / "meta.json"))["title"]})
+                if u.path == "/api/translation/parts":   # a translation as it is made: the parts the page has not got yet
+                    pid, lang = str(body.get("id") or ""), str(body.get("lang") or "")
+                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists() or not re.fullmatch(r"[\w-]{2,12}", lang):
+                        return self.json({"error": "no such paper"}, 404)
+                    tr = store.read(pid, f"tr-{lang}")
+                    if tr is None:
+                        return self.json({"units": {}, "chunks": {}, "title": None, "partial": True})
+                    have_u, have_c = set(body.get("units") or []), set(body.get("chunks") or [])
+                    return self.json({"units": {k: v for k, v in tr["units"].items() if k not in have_u},
+                                      "chunks": {k: v for k, v in tr["chunks"].items() if k not in have_c},
+                                      "title": tr.get("title"), "partial": bool(tr.get("partial")), "version": tr.get("version")})
+                if u.path in ("/api/translation", "/api/translation/term"):   # a translation put right where it is read
+                    pid, lang = str(body.get("id") or ""), str(body.get("lang") or "")
+                    if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
+                        return self.json({"error": "no such paper"}, 404)
+                    if any(j["pid"] == pid and j["status"] in ("queued", "running") for j in jobs.list()):
+                        return self.json({"error": "busy"}, 409)
+                    try:
+                        if u.path == "/api/translation":
+                            got = corrections.rewrite(pid, lang, str(body.get("unit") or ""), body.get("lines") or {})
+                        else:
+                            got = corrections.rename(pid, lang, str(body.get("old") or ""), str(body.get("new") or ""))
+                    except ValueError as e:
+                        return self.json({"error": str(e)}, 400)
+                    PAGES.pop(pid, None)
+                    return self.json(got)
                 if u.path == "/api/export":   # the paper as one file, saved by the reader for themself
                     pid, lang = str(body.get("paper") or ""), str(body.get("lang") or "")
                     if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():

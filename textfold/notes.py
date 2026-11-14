@@ -89,6 +89,15 @@ def settle_base(pid, base):
             _write(pid, data)
 
 
+def correct(pid, change):
+    """The notes file changed by change(data) and written, one writer at a time: a correction of a translation kept
+    (corrections.py: its "corrections"), the notes made in it moved with their words."""
+    with _LOCK:
+        data = read(pid)
+        change(data)
+        _write(pid, data)
+
+
 def put(pid, note):
     """Add a note, or replace the one with its id. The server stamps the times."""
     if not isinstance(note, dict) or not str(note.get("id", "")).startswith("n-") or not isinstance(note.get("anchor"), dict):

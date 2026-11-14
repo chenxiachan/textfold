@@ -175,13 +175,14 @@ Your questions can go to a stronger model than the one that writes the levels: *
 | `1` to `5` | jump to a level |
 | **Cards** or **Map**, beside the levels at Topic | the sections and their topics as cards, or as a mind map |
 | Click a paragraph | open just that paragraph |
-| Click a figure | see it enlarged |
+| Click a figure | see it enlarged; **−** and **+**, ⌘ / Ctrl + scroll or a pinch zoom into it, a click zooms where you click, and you drag it to see the rest |
 | **Original**, at the top | read beside the paper's PDF |
 | **Save**, at the top | keep the page as one file, as Markdown at the level you read, or only your notes |
 | **Aa**, at the top | light or dark, the default or paper style, the text's size, serif or sans-serif, the line spacing, the column's width, and which margins show |
 | `F` | focus: the text alone, the bars back at the screen's edge |
 | **Full screen**, in **Aa** | the window fills the screen (⌃⌘F on a Mac, F11 on Windows) |
 | Select text | highlight, write a note, or ask |
+| Select text, then **Edit text** | put the words right; in a translation, **Edit translation** puts the translation right instead: a sentence, under its original, or a term everywhere in the text, kept when it is translated again |
 | **Ask the paper**, bottom right | ask about the whole text (**Look it up on the web**, beside the question: an agent on your computer searches the web too) |
 | `L` | next language |
 | `⌘F` (Ctrl+F) | find words in the text: at the level you read, and in the author's words that level leaves out (the paragraph opens at Full while you are there); Enter and ⇧Enter step through them |

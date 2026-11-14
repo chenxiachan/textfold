@@ -380,15 +380,30 @@ figure.fig:not([data-l="4"]):not([data-l="3"]) .fig-pdf { display: none; }
 @media print { figure.fig .fig-pdf { display: none; } }
 /* a figure, enlarged over the page: dark around it in either theme, the picture on white as on paper */
 .lightbox { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-  padding: 28px 24px 22px; background: rgba(20, 18, 15, .88); animation: lb-in .16s ease-out; }
+  padding: 28px 24px 22px; background: rgba(20, 18, 15, .88); animation: lb-in .16s ease-out; overflow: hidden; touch-action: none; }
 @keyframes lb-in { from { opacity: 0; } }
 .lightbox .lb-stage { min-height: 0; max-width: 100%; display: flex; align-items: center; justify-content: center; }
 .lightbox .lb-pic { display: block; max-width: min(94vw, 1600px); max-height: 80vh; width: auto; height: auto; background: #fff; border-radius: 6px;
   padding: 8px; box-shadow: 0 24px 70px -20px rgba(0, 0, 0, .7); cursor: zoom-in; }
 .lightbox:has(.lb-cap) .lb-pic { max-height: 74vh; }
 .lightbox svg.lb-pic { width: min(94vw, 1200px); height: 76vh; }
-.lightbox.lb-full .lb-stage { overflow: auto; align-self: stretch; justify-content: flex-start; align-items: flex-start; flex: 1; }
-.lightbox.lb-full .lb-pic { max-width: none; max-height: none; margin: auto; cursor: zoom-out; }
+/* zoomed (reader.js, openLightbox): scaled and shifted from where it opened, dragged to see the rest; the caption
+   steps aside so the picture can use the screen */
+/* (no will-change: a layer would be drawn at the size it opened at, and blur as it grows) */
+.lightbox .lb-pic { cursor: zoom-in; transform-origin: 50% 50%; user-select: none; -webkit-user-drag: none; }
+.lightbox.lb-zoomed .lb-pic { cursor: grab; }
+.lightbox.lb-zoomed .lb-pic:active { cursor: grabbing; }
+.lightbox .lb-cap { transition: opacity .15s; }
+.lightbox.lb-zoomed .lb-cap { opacity: 0; pointer-events: none; }
+.lightbox .lb-zoom { display: flex; align-items: center; gap: 2px; margin-right: 6px; padding: 0 4px; height: 38px; border-radius: 19px; background: rgba(36, 33, 28, .78); }
+/* over a picture zoomed in, white as often as not: the buttons keep a dark ground */
+.lightbox.lb-zoomed .lb-action, .lightbox.lb-zoomed .lb-x { background: rgba(36, 33, 28, .78); }
+.lightbox.lb-zoomed .lb-action:hover, .lightbox.lb-zoomed .lb-x:hover, .lightbox.lb-zoomed .lb-action:focus-visible, .lightbox.lb-zoomed .lb-x:focus-visible { background: rgba(60, 56, 49, .92); }
+.lightbox .lb-z, .lightbox .lb-zl { height: 30px; border: 0; border-radius: 15px; background: none; color: #EDE9E3; cursor: pointer; font: 550 14px/1 var(--sans); }
+.lightbox .lb-z { width: 30px; font-size: 18px; }
+.lightbox .lb-zl { min-width: 50px; padding: 0 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.lightbox .lb-z:hover, .lightbox .lb-zl:hover, .lightbox .lb-z:focus-visible, .lightbox .lb-zl:focus-visible { background: rgba(255, 255, 255, .18); outline: none; }
+.lightbox .lb-z:disabled { opacity: .35; cursor: default; background: none; }
 .lightbox .lb-cap { max-width: min(760px, 92vw); max-height: 16vh; overflow-y: auto; color: #EDE9E3; font: 14px/1.5 var(--sans); text-align: center; user-select: text; cursor: text; }
 .lightbox .lb-x { position: absolute; top: 12px; right: 14px; width: 38px; height: 38px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .12);
   color: #fff; font: 400 24px/1 var(--sans); cursor: pointer; }

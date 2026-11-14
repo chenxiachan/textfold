@@ -98,7 +98,7 @@ class Convert(Base):
         d = self.stored()
         calls, started = [], threading.Event()
 
-        def generate(pid, lang, spec, force=False, progress=None, log=None, stop=None):
+        def generate(pid, lang, spec, force=False, progress=None, log=None, stop=None, shown=None):
             calls.append((lang, (d / "source.html").read_text(encoding="utf-8")))
             if len(calls) == 1:   # the old text's translation, long under way when the conversion ends
                 started.set()
