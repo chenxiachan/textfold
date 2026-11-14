@@ -11,19 +11,22 @@
   const MARK = /^(?:\[?(?:\d{1,3}[a-z]?|[a-z]|[*†‡§¶⊕]{1,3})\]?|\(\d{1,3}\))$/i;   // 1, [10], 3a, *, †, (2)
   const BLOCK = 'p, li, dd, dt, td, th, figcaption, blockquote, h1, h2, h3, h4, h5, h6';
   const bare = (s) => (s || '').replace(/\s+/g, '');
+  // a formula (as mathOut leaves it, MathML) other than in the note itself: never a note's mark, whatever it reads
+  // (n, 0, 16: Zhihu keeps each formula's TeX hidden beside its drawing)
+  const formula = (el, note) => el.localName === 'math' || [...el.querySelectorAll('math')].some((m) => !(note && note.contains(m)));
 
   // the element a hidden one hangs on, if it reads as a mark: the one just before it (nothing written between), the
   // one holding it, or (a tooltip) the one that names it in its aria-describedby
   function markOf(el, named) {
     if (el.getAttribute('role') === 'tooltip' && el.id && named.has(el.id)) {
       const m = named.get(el.id);
-      return MARK.test(bare(m.contains(el) ? m.textContent.replace(el.textContent, '') : m.textContent)) ? m : null;
+      return !formula(m, el) && MARK.test(bare(m.contains(el) ? m.textContent.replace(el.textContent, '') : m.textContent)) ? m : null;
     }
     let prev = el.previousSibling;
     while (prev && prev.nodeType !== 1 && !bare(prev.textContent)) prev = prev.previousSibling;
-    if (prev && prev.nodeType === 1 && !prev.hasAttribute('data-tf-css-hidden') && MARK.test(bare(prev.textContent))) return prev;
+    if (prev && prev.nodeType === 1 && !prev.hasAttribute('data-tf-css-hidden') && !formula(prev) && MARK.test(bare(prev.textContent))) return prev;
     const parent = el.parentElement;
-    if (parent && parent.localName !== 'body' && MARK.test(bare(parent.textContent.replace(el.textContent, '')))) return parent;
+    if (parent && parent.localName !== 'body' && !formula(parent, el) && MARK.test(bare(parent.textContent.replace(el.textContent, '')))) return parent;
     return null;
   }
 
@@ -67,8 +70,19 @@
   }
 
   // a formula MathJax drew, whose source background.js found (data-tf-math): that source in its place, as MathML (the
-  // source's own, its LaTeX beside it; or TeX in its annotation, which TextFold draws), the drawing gone
+  // source's own, its LaTeX beside it; or TeX in its annotation, which TextFold draws), the drawing gone. In the place
+  // of all that draws it: a span around it holding nothing else a reader sees (Zhihu's span.ztext-math: an empty
+  // preview, the drawing, its TeX hidden) goes with it, or a reading view takes the span for the formula (Defuddle's
+  // [data-tex]) and reads it inline, a display formula too, and the hidden TeX beside it for a note on it
   const NS = 'http://www.w3.org/1998/Math/MathML';
+  const besides = (box, el) => [...box.childNodes].every((n) => n === el || (n.nodeType === 3 ? !bare(n.textContent)
+    : n.nodeType !== 1 || n.hasAttribute('data-tf-css-hidden') || n.localName === 'script'
+      || (!bare(n.textContent) && !n.querySelector('img, svg, math, video, canvas'))));
+  const drawnBy = (el) => {
+    let at = el;
+    while (at.parentElement && at.parentElement.localName === 'span' && besides(at.parentElement, at)) at = at.parentElement;
+    return at;
+  };
   function mathOut(doc) {
     let k = 0;
     for (const el of [...doc.querySelectorAll('[data-tf-math]')]) {
@@ -95,7 +109,7 @@
         m.setAttribute('data-latex', src);
       }
       m.setAttribute('display', el.getAttribute('data-tf-math-display') === 'block' ? 'block' : 'inline');
-      el.replaceWith(m);
+      drawnBy(el).replaceWith(m);
       k += 1;
     }
     return k;

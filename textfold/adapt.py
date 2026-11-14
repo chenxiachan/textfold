@@ -381,22 +381,74 @@ def _where(el, stop):
     return el.tag
 
 
+def _own_text(el):
+    """An element's words outside the blocks inside it (an item's words before its nested list)."""
+    out = [el.text or ""]
+    for ch in el:
+        if isinstance(ch.tag, str) and ch.tag not in BLOCKS and not any(isinstance(d.tag, str) and d.tag in BLOCKS for d in ch.iterdescendants()):
+            out.append(ch.text_content())
+        elif isinstance(ch.tag, str) and ch.tag not in BLOCKS:
+            out.append(_own_text(ch))
+        out.append(ch.tail or "")
+    return "".join(out)
+
+
 def _blocks(root):
-    """The page's smallest blocks of text: [(element, its words, normalized)]."""
+    """The page's blocks of text, each with its own words (a block's words outside the blocks inside it):
+    [(element, its words normalized, as the page writes them)]."""
     out = []
     for el in root.iter(*BLOCKS):
-        if any(d.tag in BLOCKS for d in el.iterdescendants() if isinstance(d.tag, str)):
-            continue
-        t = _norm(el.text_content())
+        inner = any(isinstance(d.tag, str) and d.tag in BLOCKS for d in el.iterdescendants())
+        raw = re.sub(r"\s+", " ", _placed(webpage.NOTE_AT.sub("", _own_text(el) if inner else el.text_content()))).strip()
+        t = _norm(raw)
         if t:
-            out.append((el, t))
+            out.append((el, t, raw))
     return out
 
 
+FORMULA = "∮"   # a formula's place, on the page and in the reading alike: its TeX and its drawing read otherwise
+HELD_TEX = re.compile(r"TFMATH\d+Q|TFTEX\d+Q")
+# TeX in the text, as the reading draws it (markdown.py: $...$ by Pandoc's rule, no space inside, no digit after)
+TEX_TEXT = re.compile(r"\$\$.+?\$\$|\\\[.+?\\\]|\\\(.+?\\\)|" + webpage.DOLLARS.pattern, re.S)
+
+
+def _placed(t):
+    """Text with each formula its place (FORMULA): one held by webpage._tex, and TeX the page writes in its text for a
+    script to draw, $$...$$, \\[...\\], \\(...\\) and $...$, which the reading draws (markdown.py)."""
+    return TEX_TEXT.sub(f" {FORMULA} ", HELD_TEX.sub(FORMULA, t))
+SENTENCE = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])")   # (a sentence of Chinese or Japanese ends with no space after it)
+CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
+
+
+def _long(t, words):
+    """Long enough to be told apart where it stands: so many words, or twice as many CJK characters (a sentence of
+    Chinese or Japanese has no spaces to count words by)."""
+    return len(t.split()) >= words or len(CJK.findall(t)) >= 2 * words
+
+
+def _formulas_out(root):
+    """Each formula of the page its place alone (FORMULA): one drawn (webpage.formula: MathML, MathJax's or KaTeX's
+    drawing, one whose source the browser's button read), and TeX written in its text for a script to draw
+    (webpage._tex). MathJax's preview of one goes. (how many)"""
+    for el in root.xpath('//*[contains(concat(" ", normalize-space(@class), " "), " MathJax_Preview ")]'):
+        webpage._swap(el, "")
+    n = 0
+    for el in list(root.iter()):
+        if not isinstance(el.tag, str) or el.getparent() is None or not webpage._within(el, root):
+            continue
+        if el.tag.rsplit("}", 1)[-1] in ("math", "mjx-container") or el.get("data-tf-math") is not None \
+                or webpage.FORMULA_CLASS.search(el.get("class") or ""):
+            webpage._swap(el, f" {FORMULA} ")
+            n += 1
+    return n + len(webpage._tex(root))
+
+
 def shown(page, url, recipe=None):
-    """The page as its reader reads it, with the recipe's choices on it: its notes and their marks out of the text (they
-    show on hover), its pictures' alt texts in (a screen reader says them). (its tree, its words, normalized)"""
+    """The page as its reader reads it, with the recipe's choices on it: its formulas each a place (FORMULA), its notes
+    and their marks out of the text (they show on hover), its pictures' alt texts in (a screen reader says them).
+    (its tree, its words, normalized)"""
     root = seen(_tag(page, recipe)[0] if recipe else page, url)
+    _formulas_out(root)
     webpage._hover_marks(root)
     webpage._notes(root)
     webpage._hidden_out(root)
@@ -405,10 +457,14 @@ def shown(page, url, recipe=None):
     for img in root.iter("img"):
         if (img.get("alt") or "").strip():
             img.tail = f" {img.get('alt')} " + (img.tail or "")
-    return root, _norm(webpage.NOTE_AT.sub("", root.text_content()))
+    return root, _flat_text(root)
 
 
-MARKS = re.compile(r"\[\d{1,3}\]|↩︎|↩|\u21a9\ufe0e?")   # (a footnote's mark and its way back, on the page: on hover in the reading)
+def _flat_text(el):
+    return _norm(_placed(webpage.NOTE_AT.sub("", el.text_content())))
+
+
+MARKS = re.compile(r"\[\d{1,3}\]|↩︎|↩|↩︎?")   # (a footnote's mark and its way back, on the page: on hover in the reading)
 
 
 def _runs(toks):
@@ -423,60 +479,207 @@ def _runs(toks):
     return [r for r in out + [cur] if r.strip()]
 
 
-def check(page, url, html, recipe=None):
-    """The reading (html, normalized) against the page as its reader sees it: words taken that the page does not show
-    (there should be none), the page's blocks the reading lacks (within the recipe's article, when it names one),
-    grouped by where they are, and paragraphs a reader's browser could not find again by their first words."""
+def _html_words(html):
+    """What a block of the reading's HTML shows: its words, a formula its place, a picture its alt text."""
     from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    for m in soup.find_all("math"):
+        m.replace_with(f" {FORMULA} ")
+    for img in soup.find_all("img"):
+        img.replace_with(f" {img.get('alt') or ''} ")
+    return _norm(_placed(soup.get_text(" ")))
+
+
+def _note_words(html):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+    for m in soup.select("sup.ltx_note_mark"):
+        m.decompose()
+    box = soup.select_one("span.ltx_note_content") or soup
+    for m in box.find_all("math"):
+        m.replace_with(f" {FORMULA} ")
+    return _norm(box.get_text(" "))
+
+
+def reading(doc):
+    """What the reader shows of a reading (parse.parse's), block by block: ([(kind, its words, normalized)], the words
+    of its notes, shown on hover). A formula is its place (FORMULA)."""
+    atoms, units = doc["atoms"], doc["units"]
+    told = []
+
+    def said(toks):
+        out = []
+        for tk in toks:
+            if "t" in tk:
+                out.append(tk["t"] + (" " if tk.get("s") else ""))
+                continue
+            if "x" in tk:
+                out.append(f" {FORMULA} ")
+                continue
+            at = atoms.get(tk.get("a"), {})
+            if at.get("kind") == "math":
+                out.append(f" {FORMULA} ")
+            elif at.get("kind") == "note":
+                told.append(_note_words(at.get("html") or ""))
+            elif "<img" in (at.get("html") or "") or "<math" in (at.get("html") or ""):
+                out.append(" " + _html_words(at["html"]) + " ")
+            else:
+                out.append(at.get("text") or "")
+        return _norm(_placed("".join(out)))
+    chunks = {c["id"]: c for c in doc["chunks"]}
+    meta = doc.get("meta") or {}
+    authors = [a for a in meta.get("authors") or [] if isinstance(a, str)]
+    out = [("header", _norm(x)) for x in [meta.get("title") or "", ", ".join(authors), *authors, str(meta.get("date") or "")]]
+    for b in doc["blocks"]:
+        k = b["k"]
+        if k == "h" and b.get("chunk") in chunks:
+            c = chunks[b["chunk"]]   # (its number apart, as the reader shows it: "1. Introduction" on the page)
+            out += [("heading", _norm(f'{c.get("num") or ""} {c.get("title") or ""}')), ("heading", _norm(c.get("title") or ""))]
+        elif k == "u":
+            out.append(("paragraph", said(units[b["u"]]["toks"])))
+        elif k == "fig":
+            out.append(("figure", _html_words(b.get("html") or "")))
+            if b.get("cap") in units:
+                out.append(("caption", said(units[b["cap"]]["toks"])))
+        elif k in ("raw", "eq"):   # (a raw block of code or a table is "code": it is not meant to fold)
+            html = b.get("html") or ""
+            code = k == "raw" and bool(re.match(r"\s*<(pre|table|div[^>]*\bpf-(?:tex|grid|mermaid))", html))
+            out.append(("code" if code else k, _html_words(html)))
+        elif k == "box" and b.get("title"):
+            out.append(("box", _html_words(b["title"])))
+    if doc.get("bib"):
+        out.append(("references", _html_words(doc["bib"])))
+    return [(k, t) for k, t in out if t], [t for t in told if t]
+
+
+def _to_here(el, url):
+    """A block whose words are links to places on this same page, and little else (a number, a dot): the page's
+    contents, or a list of its own sentences to go to. Not the article's words: those are read where they are
+    (parse.worded)."""
+    links = list(el.iter("a"))
+    here = url.split("#")[0].rstrip("/")
+    if not links or not all((a.get("href") or "").startswith("#") or ("#" in (a.get("href") or "")
+                                                                       and a.get("href").split("#")[0].rstrip("/") == here) for a in links):
+        return False
+    words = lambda t: re.sub(r"[\W\d_]+", "", t)  # noqa: E731
+    return words(el.text_content()) == words("".join(a.text_content() for a in links))
+
+
+def _area(blocks, found, root):
+    """The element the reading was taken from, when no recipe names it: the deepest holding nine tenths of the page's
+    words the reading has (a page's comments, its recommendations, its menus are outside it)."""
+    weight, total = {}, 0
+    for (el, t, _), hit in zip(blocks, found):
+        if not hit:
+            continue
+        w = len(t)
+        total += w
+        for a in el.iterancestors():   # (an element that holds blocks, not a block: one long paragraph is not the article)
+            weight[a] = weight.get(a, 0) + w
+    best, depth = root, -1
+    for a, w in weight.items():
+        if w >= 0.9 * total:
+            d = sum(1 for _ in a.iterancestors())
+            if d > depth:
+                best, depth = a, d
+    return best
+
+
+def check(page, url, html, recipe=None, doc=None):
+    """The reading (html, normalized; or doc, as parse.parse gives it) against the page as its reader sees it, as the
+    reader shows it: words taken that the page does not show (there should be none); the page's blocks the reading
+    lacks, within its article (the recipe's, or the element the reading was taken from), grouped by where they are,
+    and the blocks whose words are there but not their formulas, all of them or in their places; the reading's
+    paragraphs taken from outside the article (a site's furniture, most often: a byline, a count of likes); the
+    formulas and pictures of each; and paragraphs a reader's browser could not find again by their first words. A
+    formula is compared by its place, not its TeX (a page draws it, the reading keeps its source)."""
     from . import semantic
     from .parse import parse
-    from .tokens import plain
     root, text = shown(page, url, recipe)
     flat = text.replace(" ", "")   # (two blocks side by side on the page, a title and its authors, have no space between)
-    norm = semantic.normalize(html, sizes=True)
-    doc = parse(norm, {"id": "web-check"})
-    soup = BeautifulSoup(norm, "lxml")
-    told = []   # (a note's words: a block of the page, an endnote, may be one)
-    for c in soup.select("span.ltx_note_content"):
-        for m in c.select("sup.ltx_note_mark"):
-            m.decompose()
-        told.append(_norm(c.get_text(" ")).replace(" ", ""))
-    for note in soup.select("span.ltx_note"):   # (a note is on hover, as on the page: not in the sentence)
-        note.decompose()
-    got = _norm(soup.get_text(" ").replace("🖼", " "))   # (a picture this check does not fetch: its place, not a word)
-    units = [_norm(plain(u["toks"], doc["atoms"], math_dollars=False)) for u in doc["units"].values()]
+    if doc is None:
+        doc = parse(semantic.normalize(html, sizes=True), {"id": "web-check"})
+    shown_blocks, told = reading(doc)
+    got = " ".join(t for _, t in shown_blocks)
     not_seen, twice = [], []
+    flat_bare = flat.replace(FORMULA, "")   # (a formula the reading lost runs the words around it together: said apart)
     for u in doc["units"].values():
-        for run in (r.replace("🖼", " ") for r in _runs(u["toks"])):   # (the words between its formulas and other atoms: a formula reads otherwise on the page)
-            for piece in re.split(r"(?<=[.!?。！？])\s+", _norm(run)):
-                if len(piece.split()) >= 5 and piece.replace(" ", "") not in flat:
+        for run in (r.replace("🖼", " ") for r in _runs(u["toks"])):   # (the words between its formulas and other atoms)
+            for piece in SENTENCE.split(_norm(run)):
+                if _long(piece, 5) and piece.replace(" ", "") not in flat_bare:
                     not_seen.append(piece)
-    for t in units:
+    for kind, t in shown_blocks:
+        if kind != "paragraph":
+            continue
         head = " ".join(t.replace("🖼", " ").split()[:10])
         if len(t.split()) >= 6 and flat.count(head.replace(" ", "")) != 1:
             twice.append(head)
     hit = root.xpath('//*[@data-tf-article]') if recipe and recipe.get("article") else []
-    area = hit[0] if hit else root
     carded = 0
-    for el in area.xpath('.//*[@data-tf-drop] | .//*[@data-tf-figure]'):
-        if el.getparent() is not None:
+    for el in root.xpath('.//*[@data-tf-drop] | .//*[@data-tf-figure]'):
+        if el.getparent() is not None and (not hit or webpage._within(el, hit[0])):
             carded += len(_blocks(el)) if el.get("data-tf-figure") else 0
             el.drop_tree()
-    missing, flat_got = {}, got.replace(" ", "") + "|" + "|".join(told)
-    page_blocks = sum(1 for _, t in _blocks(area) if len(t.split()) >= 8 or len(t) >= 24)
-    for el, t in _blocks(area):
-        t = _norm(webpage.NOTE_AT.sub("", t))
+    flat_got = got.replace(" ", "").replace("🖼", "") + "|" + "|".join(t.replace(" ", "") for t in told)
+    # its words alone, a formula's place kept: a section's number, a footnote's left as a digit, a dash or quote set
+    # otherwise, do not make a block missing; nor its formulas, when they are not there (bare)
+    words = lambda x: re.sub(r"[^\w" + FORMULA + r"]+|[\d_]+", "", x)  # noqa: E731
+    words_got = words(flat_got.replace("|", " | "))
+    bare_got = words_got.replace(FORMULA, "")
+    blocks = _blocks(root)
+    state = []   # ("there" | "formulas" | "contents" | "missing") of each block of the page
+    for el, t, _ in blocks:
         f = MARKS.sub("", t).replace(" ", "")
-        if not f or f in flat_got:
+        w = words(f)
+        lettered = bool(w.replace(FORMULA, ""))   # (a number alone, a table's cell, is compared as it is written)
+        if not f.replace(FORMULA, "") or f in flat_got or (lettered and w in words_got):
+            state.append("there")
             continue
-        said = [MARKS.sub("", x).replace(" ", "") for x in re.split(r"(?<=[.!?。！？])\s+", t) if len(x.split()) >= 4 or len(x) >= 12]
-        if len(said) > 1 and sum(x in flat_got for x in said) >= 0.8 * len(said):
-            continue   # (a long block, its sentences there: told apart by an atom or a space the reading moved)
-        missing.setdefault(_where(el, area), []).append(t)
-    return {"words": len(got.split()), "paragraphs": len(units), "notes": norm.count("ltx_note ltx_role_footnote"),
+        if _to_here(el, url):
+            state.append("contents")   # (neither the reading's nor missing from it)
+            continue
+        said = [words(MARKS.sub("", x)) for x in SENTENCE.split(t) if _long(x, 4) or len(x) >= 12]
+        if len(said) > 1 and sum(x in words_got for x in said) >= 0.8 * len(said):
+            state.append("there")   # (a long block, its sentences there: told apart by an atom or a space the reading moved)
+        elif lettered and FORMULA in f and w.replace(FORMULA, "") in bare_got:
+            state.append("formulas")
+        else:
+            state.append("missing")
+    area = hit[0] if hit else _area(blocks, [s in ("there", "formulas") for s in state], root)
+    missing, elsewhere, moved, short, in_order = {}, {}, [], [], []
+    page_blocks = 0
+    for (el, t, raw), s in zip(blocks, state):
+        inside = el is area or webpage._within(el, area)
+        if inside and (_long(t, 8) or len(t) >= 24):
+            page_blocks += 1
+        if s == "formulas" and inside:
+            moved.append(raw)
+        elif s == "missing" and inside and not (_long(t, 4) or len(t) >= 20):
+            short.append(t)   # (a label: a chart's, a logo's name, a button's; or a short item of a list)
+        elif s == "missing":
+            (missing if inside else elsewhere).setdefault(_where(el, area if inside else root), []).append(t)
+            if inside:
+                in_order.append(raw)
+    in_area = _flat_text(area).replace(" ", "")
+    outside = [t for kind, t in shown_blocks if kind in ("paragraph", "raw") and t.replace(" ", "") not in in_area
+               and t.replace(" ", "") in flat and len(t) >= 2]
+    pictures = len({img.get("src") for img in area.iter("img") if webpage._real(img)})
+    text = sum(len(t) for k, t in shown_blocks if k in ("paragraph", "raw", "caption"))
+    unfolded = sum(len(t) for k, t in shown_blocks if k == "raw") / text if text else 0.0
+    group = lambda d, n: {k: (len(v), v[:3]) for k, v in sorted(d.items(), key=lambda kv: -len(kv[1]))[:n]}  # noqa: E731
+    return {"words": len(got.split()), "paragraphs": len(doc["units"]),
+            "notes": sum(1 for a in doc["atoms"].values() if a.get("kind") == "note"),
+            "article": "the recipe's" if hit else _sig(area),
             "not on the page": not_seen[:8], "not on the page (count)": len(not_seen),
-            "missing": {k: (len(v), v[:3]) for k, v in sorted(missing.items(), key=lambda kv: -len(kv[1]))[:12]},
-            "missing (blocks)": sum(len(v) for v in missing.values()), "in figures shown as a link": carded,
+            "missing": group(missing, 12), "missing (blocks)": sum(len(v) for v in missing.values()),
+            "missing (in order)": in_order[:12],
+            "missing, short": len(short), "missing, short (e.g.)": short[:5],
+            "formulas not there": len(moved), "formulas not there (e.g.)": moved[:12],
+            "from outside the article": len(outside), "from outside the article (e.g.)": outside[:5],
+            "not in the reading, outside the article": group(elsewhere, 5),
+            "formulas": {"page": in_area.count(FORMULA), "reading": flat_got.split("|")[0].count(FORMULA)},
+            "pictures": {"page": pictures, "reading": len(doc.get("images") or [])},
+            "in figures shown as a link": carded, "not folding": round(unfolded, 2),
             "not found again by its words": len(twice), "not found again (e.g.)": twice[:3], "page blocks": page_blocks}
 
 
@@ -484,14 +687,62 @@ def report(c):
     run = (f"   <- the page has {c['page blocks']} blocks of text here: paragraphs run together?"
            if c.get("page blocks", 0) >= 8 and c["paragraphs"] < c["page blocks"] / 2 else "")
     lines = [f"words: {c['words']:,}  paragraphs: {c['paragraphs']}  notes: {c['notes']}" + run,
+             f"the article: {c['article']}",
              f"words the page does not show: {c['not on the page (count)']}" + "".join(f'\n    "{p[:110]}"' for p in c["not on the page"]),
-             f"blocks of the page not in the reading: {c['missing (blocks)']}"
+             f"blocks of the article not in the reading: {c['missing (blocks)']}"
              + (f" (and {c['in figures shown as a link']} in the figures the recipe shows as a link)" if c.get("in figures shown as a link") else "")]
     for where, (n, eg) in c["missing"].items():
         lines.append(f"    {where}: {n}" + "".join(f'\n        "{e[:90]}"' for e in eg))
+    lines.append(f"short ones (a label, a short item): {c['missing, short']}" + "".join(f'  "{e[:30]}"' for e in c["missing, short (e.g.)"]))
+    lines.append(f"blocks whose words are there, not their formulas: {c['formulas not there']}"
+                 + "".join(f'\n    "{e[:90]}"' for e in c["formulas not there (e.g.)"]))
+    lines.append(f"of the reading's text, in blocks that do not fold: {c['not folding']:.0%}")
+    lines.append(f"formulas: {c['formulas']['page']} on the page, {c['formulas']['reading']} in the reading;  "
+                 f"pictures: {c['pictures']['page']} on the page, {c['pictures']['reading']} in the reading")
+    lines.append(f"paragraphs of the reading from outside the article: {c['from outside the article']}"
+                 + "".join(f'\n    "{e[:90]}"' for e in c["from outside the article (e.g.)"]))
+    if c["not in the reading, outside the article"]:
+        lines.append("not in the reading, outside the article (a site's furniture, or what the reading missed):")
+        for where, (n, eg) in c["not in the reading, outside the article"].items():
+            lines.append(f"    {where}: {n}" + "".join(f'\n        "{e[:90]}"' for e in eg[:2]))
     lines.append(f"paragraphs a browser could not find again by their first words alone: {c['not found again by its words']}"
                  + "".join(f'\n    "{e[:90]}"' for e in c["not found again (e.g.)"]))
     return "\n".join(lines)
+
+
+_CHECKED = {}   # pid: (the times of its files, what stored said): said again when the page, its reading or its meta change
+
+
+def stored(pid):
+    """A page kept with its snapshot (snapshot.html: one sent from the browser) checked against its reading as the
+    reader shows it, for the reader to say (/api/check): how much of its text is in blocks that do not fold
+    (not_folding, 0 to 1); how many blocks of the article the reading lacks (missing;
+    short: a label, a short item), whose formulas are not there (formulas), what the reading has that the page does
+    not show (not_on_page), what it took from outside the article (outside), each with examples as the page writes
+    them (…_eg); the formulas on the page and in the reading; edited: its text was edited in TextFold, and the edits
+    differ from the page too. None: no such page (any other document)."""
+    from . import store
+    if not store.valid_id(pid):
+        return None
+    d = store.pdir(pid)
+    files = [d / f for f in ("snapshot.html", "source.html", "meta.json")]
+    if not all(f.exists() for f in files):
+        return None
+    key = tuple(f.stat().st_mtime_ns for f in files)
+    if pid in _CHECKED and _CHECKED[pid][0] == key:
+        return _CHECKED[pid][1]
+    meta = json.loads(store.read_text(d / "meta.json"))
+    url = meta.get("abs_url") or (meta.get("source") or {}).get("url") or ""
+    c = check(store.read_text(d / "snapshot.html"), url, None, doc=store.parsed(pid))
+    got = {"article": c["article"], "missing": c["missing (blocks)"], "missing_eg": c["missing (in order)"],
+           "short": c["missing, short"], "short_eg": c["missing, short (e.g.)"],
+           "formulas": c["formulas not there"], "formulas_eg": c["formulas not there (e.g.)"],
+           "not_on_page": c["not on the page (count)"], "not_on_page_eg": c["not on the page"],
+           "outside": c["from outside the article"], "outside_eg": c["from outside the article (e.g.)"],
+           "f_page": c["formulas"]["page"], "f_reading": c["formulas"]["reading"], "edited": bool(meta.get("replaced")),
+           "not_folding": c["not folding"]}
+    _CHECKED[pid] = (key, got)
+    return got
 
 
 def snapshot(url, path=None, rendered=False):

@@ -183,12 +183,28 @@ def cjk_heavy(toks):
     return total > 0 and cjk / total > 0.2
 
 
-def add_units(doc, el, role, uid=None, split=True, **extra):
+def worded(doc, tk):
+    """A token that shows words: a word, or an atom with words of its own (a link's, a citation's, inline code's). A
+    link to a place on this same page (#…) is not: a list of such links is the page's contents or a list of its own
+    sentences to go to, its words the page's own, read where they are."""
+    if "t" in tk:
+        return True
+    at = doc.atoms.get(tk.get("a"), {})
+    if at.get("kind") == "ref":
+        href = (re.search(r'\shref="([^"]*)"', at.get("html") or "") or [None, ""])[1]
+        page = str(doc.meta.get("abs_url") or "").split("#")[0].rstrip("/")
+        if href.startswith("#") or (page and "#" in href and href.split("#")[0].rstrip("/") == page):
+            return False
+    return at.get("kind") in ("ref", "cite", "html") and bool(re.search(r"\w", at.get("text") or ""))
+
+
+def add_units(doc, el, role, uid=None, split=True, linked=False, **extra):
     """The text of el as one unit, or as several when the author wrote a page-long paragraph: a 28-sentence
-    introduction zoomed as a single unit keeps 3 sentences of 28 at Key and says nothing at Topic."""
+    introduction zoomed as a single unit keeps 3 sentences of 28 at Key and says nothing at Topic. linked: a unit
+    even when all its words are in links or code (a list's item: a reference list of titles, a list of functions)."""
     toks = []
     flatten(el, doc, toks)
-    if not any("t" in tk for tk in toks):
+    if not any(worded(doc, tk) if linked else "t" in tk for tk in toks):
         return []
     sents = split_sentences(toks)
     parts = [(0, len(toks), sents)]
@@ -272,9 +288,13 @@ def section(el, doc):
 def items(el):
     """A list's items as (marker, the element holding the item's text, an element to leave out). A description list
     (LaTeX's description) has a term and its text; a term with words leads the text's first paragraph, so it is read,
-    translated and zoomed with it."""
+    translated and zoomed with it. A list put straight in a list, not in one of its items (<ul><ul>, as Zhihu writes
+    a nested list), is drawn by a browser as a nested list: given as itself, marker None, to be read a level deeper."""
     if el.name != "dl":
-        for li in el.find_all("li", recursive=False):
+        for li in el.find_all(["li", "ul", "ol"], recursive=False):
+            if li.name != "li":
+                yield None, li, None
+                continue
             tag = li.find(class_="ltx_tag", recursive=False)
             yield (shown(tag, strip=True) if tag else "•"), li, tag
         return
@@ -293,15 +313,21 @@ def items(el):
 
 def lst(el, doc, depth=0):
     for marker, li, tag in items(el):
+        if marker is None:
+            lst(li, doc, depth + 1)
+            continue
         first = True
         # an item's paragraphs may hold equations or a nested list between its text
         parts = [c for ch in li.find_all(recursive=False) if ch is not tag
                  for c in (ch.find_all(recursive=False) if "ltx_para" in ch.get("class", []) else [ch])]
         for ch in parts:
             if ch.name == "p" and "ltx_p" in ch.get("class", []) and not blockish(ch):
-                for uid in add_units(doc, ch, "item", list=el.get("id") or "list", depth=depth, marker=marker if first else ""):
+                ids = add_units(doc, ch, "item", linked=True, list=el.get("id") or "list", depth=depth, marker=marker if first else "")
+                for uid in ids:
                     doc.add({"k": "u", "u": uid})
                     first = False
+                if not ids and ch.find(["img", "svg", "math", "video", "iframe"]):
+                    doc.add({"k": "raw", "html": str(ch)})   # (a formula or a picture alone: shown as it is, as block shows one)
             elif ch.name in ("ul", "ol", "dl"):
                 lst(ch, doc, depth + 1)
             else:

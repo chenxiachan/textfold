@@ -19,6 +19,9 @@
   GET  /api/text/<id>         {text, original}: a document's text as Markdown (local.text_of), for the reader to put
                               right (a PDF's OCR, a page's words) and send back to /api/import with its id; original: the text it had
                               when it was last generated, before the edits since (null: none; local.original)
+  GET  /api/check/<id>        a page sent from the browser checked against its reading as the reader shows it
+                              (adapt.stored: what it lacks, formulas not there, what it took from outside the
+                              article, examples of each); 404: no page kept with it
   GET  /api/translation/<id>  ?lang=&unit=&sents=0,1: a translation as text to put right ({text, at}: where the sentences
                               selected are in it; corrections.text_of)
   POST /api/translation/parts {id, lang, units, chunks}: a translation as it is made (partial), its paragraphs and
@@ -116,7 +119,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, agents, bridges, build, corrections, engine, fetch, fold, ids, langs, library, llm, local, models, news, notes, office, pdf, pdfdoc, pdffigs, pdftext, pipeline, providers, record, store, zotero
+from . import __version__, adapt, agents, bridges, build, corrections, engine, fetch, fold, ids, langs, library, llm, local, models, news, notes, office, pdf, pdfdoc, pdffigs, pdftext, pipeline, providers, record, store, zotero
 
 STATIC = {"app.js": "text/javascript", "app.css": "text/css", "reader.js": "text/javascript",
           "reader.css": "text/css", "i18n.js": "text/javascript", "tutorial.js": "text/javascript", "webmcp.js": "text/javascript",
@@ -774,6 +777,10 @@ def make_handler(jobs):
                     if text is None:
                         return self.json({"error": "no text to edit"}, 404)
                     return self.json({"text": text, "original": local.original(pid)})
+                m = re.fullmatch(r"/api/check/([\w.-]+)", u.path)   # (a page from the browser against its reading)
+                if m:
+                    got = adapt.stored(m.group(1))
+                    return self.json(got) if got is not None else self.json({"error": "no page to check against"}, 404)
                 m = re.fullmatch(r"/api/translation/([\w.-]+)", u.path)   # (a translation's sentences, to put right)
                 if m:
                     q = parse_qs(u.query)

@@ -978,6 +978,21 @@ html.morphing .chatbtn { pointer-events: none; }
 .paper-head .license { font-size: calc(12.5px * var(--fs)); margin-top: 6px; }
 .license, .license a { color: var(--faint); }   /* (no .paper-head before it: the zoom's copies of this line have none) */
 .license a:hover { color: var(--muted); }
+/* a page sent from the browser, against the page it came from (reader.js, renderVs): folded, a line under the authors */
+.paper-head .vs { font-size: calc(12.5px * var(--fs)); margin-top: 4px; color: var(--faint); }
+.vs summary { cursor: pointer; list-style: none; }
+.vs summary::-webkit-details-marker { display: none; }
+.vs summary::before { content: "▸ "; }
+.vs details[open] summary::before { content: "▾ "; }
+.vs summary.vs-bad { color: var(--c-red-ink); }
+.vs-body { margin: 6px 0 2px; padding: 4px 0 4px 12px; border-left: 2px solid var(--rule); color: var(--muted); }
+.vs-body h4 { font-size: inherit; font-weight: 600; margin: 10px 0 4px; color: var(--ink); }
+.vs-body ul { margin: 0; padding-left: 18px; }
+.vs-body li { margin: 3px 0; line-height: 1.45; }
+.vs-body a { color: var(--faint); white-space: nowrap; }
+.vs-body a:hover { color: var(--accent); }
+.vs-note { margin: 2px 0; }
+.vs-f { font-style: normal; color: var(--faint); }
 /* "keep my highlights": the reader's passages, kept as the paper zooms out, in the author's type */
 .tk.kept, .tr.kept { font-family: var(--serif); font-weight: 400; color: var(--ink-2); }
 :is(.u, .tx)[data-l="1"] .tk.kept, .u[data-l="1"] .tr.kept { font-size: .95em; }

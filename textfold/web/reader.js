@@ -648,6 +648,59 @@
     }
   }
 
+  // a page sent from the browser, checked against the page as it was sent (/api/check: adapt.stored), on the line
+  // under its authors: blocks of the article the reading did not take, formulas not as on the page, words the page
+  // does not show, what it took from outside the article. Folded; an example opens the page at its place (a text
+  // fragment), in the reader's browser
+  let VS = null;
+  const FORMULA = '∮';   // (a formula's place in the examples: adapt.FORMULA)
+  const vsLink = (s) => {
+    let head = s.split(FORMULA)[0].trim();
+    if (head.length > 60) head = /[぀-ヿ㐀-鿿가-힯]/.test(head) ? head.slice(0, 60) : head.slice(0, 60).replace(/\s+\S*$/, '');
+    const page = String(D.meta.abs_url || '').split('#')[0];
+    return head.length >= 4 ? `${page}#:~:text=${encodeURIComponent(head).replace(/-/g, '%2D')}` : page;
+  };
+  function renderVs() {
+    paperHead.querySelector('.vs')?.remove();
+    const c = VS, t = T[ui];
+    if (!c) return;
+    const say = (s, k) => s.replace('{n}', k);
+    const bad = [[c.missing, t.vs_missing, c.missing_eg, true], [c.formulas, t.vs_formulas, c.formulas_eg, true],
+      [c.not_on_page, t.vs_notpage, c.not_on_page_eg, false],
+      [c.not_folding >= 0.5 ? Math.round(c.not_folding * 100) : 0, t.vs_unfolded, [], false]].filter((x) => x[0]);
+    const soft = [[c.outside, t.vs_outside, c.outside_eg, true], [c.short, t.vs_short, c.short_eg, true]].filter((x) => x[0]);
+    const box = h('div', 'vs'); box.dataset.id = 'ph:vs';
+    paperHead.append(box);
+    const head = t.vs_head + (t.vs_head.endsWith('：') ? '' : ' ');   // (a full-width colon has its space in it)
+    if (!bad.length && !soft.length) { box.textContent = head + t.vs_none; return; }
+    const det = h('details');
+    const sum = h('summary', bad.length ? 'vs-bad' : null);
+    sum.textContent = head + [...bad, ...soft].map(([k, label]) => say(label, k)).join(' · ');
+    const body = h('div', 'vs-body');
+    body.append(h('p', 'vs-note', esc(t.vs_note + (c.edited ? ` ${t.vs_edited}` : ''))));
+    if (c.f_page !== c.f_reading) body.append(h('p', 'vs-note', esc(t.vs_counts.replace('{a}', c.f_page).replace('{b}', c.f_reading))));
+    for (const [k, label, eg, onPage] of [...bad, ...soft]) {
+      body.append(h('h4', null, esc(say(label, k))));
+      if (!eg || !eg.length) continue;
+      const ul = h('ul');
+      for (const e of eg || []) {
+        const li = h('li', null, esc(e.length > 160 ? `${e.slice(0, 160)}…` : e).replaceAll(FORMULA, `<i class="vs-f">${FORMULA}</i>`));
+        if (onPage && D.meta.abs_url) {
+          const a = h('a', null, esc(t.vs_open)); a.href = vsLink(e); a.target = '_blank'; a.rel = 'noopener';
+          li.append(' ', a);
+        }
+        ul.append(li);
+      }
+      body.append(ul);
+    }
+    det.append(sum, body);
+    box.append(det);
+  }
+  if (D.app && SRC === 'web') {
+    fetch(`/api/check/${encodeURIComponent(D.meta.id)}`).then((r) => (r.ok ? r.json() : null))
+      .then((c) => { VS = c; renderVs(); }).catch(() => {});
+  }
+
   // everything that is text in the chrome or depends on the language but is not a unit
   function applyLang() {
     if (mapReady) { renderTview(); mapKey = ''; if (mapShown) setTimeout(() => { if (mapShown) mapRender(); }); }   // (drawn again in the new language, once it is in)
@@ -661,6 +714,7 @@
       (m.license || m.snapshot ? `<div class="license">${[m.license ? `<a href="${esc(m.license)}" target="_blank" rel="noopener">${esc(licenseName(m.license, t))}</a>` : '',
         m.snapshot ? esc(t.snapshot.replace('{date}', longDate(m.snapshot))) : ''].filter(Boolean).join(' · ')}</div>` : '');
     [...paperHead.children].forEach((c) => { c.dataset.id = `ph:${c.className || c.tagName}`; });
+    renderVs();
     capEpoch++;
     // theorem labels come from LaTeXML in English
     // only the leading kind word ("Theorem 1.1", "Proof"), not a name such as "The Auslander-Reiten Conjecture"

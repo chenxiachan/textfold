@@ -188,10 +188,27 @@ def _notes(root):
     return notes
 
 
+FORMULA_CLASS = re.compile(r"(?:^|\s)(?:MathJax\w*|katex(?:-display)?|mwe-math-element)(?:\s|$)")
+
+
+def formula(el, note=None):
+    """el is, or holds outside note, a formula as drawn: MathML, MathJax's or KaTeX's drawing, one whose source the
+    browser's button read (data-tf-math). Never a note's mark, whatever it reads: Zhihu keeps each formula's TeX hidden
+    beside its drawing, and a formula n or 0 reads as a mark."""
+    for e in el.iter():
+        if not isinstance(e.tag, str) or (note is not None and _within(e, note)):
+            continue
+        if e.tag.rsplit("}", 1)[-1] in ("math", "mjx-container") or e.get("data-tf-math") is not None \
+                or FORMULA_CLASS.search(e.get("class") or ""):
+            return True
+    return False
+
+
 def _hover_marks(root):
     """In a browser's snapshot (the app's, an extension's), what the browser did not show is marked data-tf-css-hidden.
-    One that hangs on a mark (the element just before it, or the one holding it, reads 1, [10] or *) is a note shown
-    on hover, whatever the page calls it: marked for _notes as a recipe's note is. The rest goes (_hidden_out)."""
+    One that hangs on a mark (the element just before it, or the one holding it, reads 1, [10] or *, and is not a
+    formula) is a note shown on hover, whatever the page calls it: marked for _notes as a recipe's note is. The rest
+    goes (_hidden_out)."""
     k = 0
     for el in root.xpath('//*[@data-tf-css-hidden]'):
         if el.get("role") == "tooltip" or el.get("data-tf-note") or el.tag == "d-footnote" or not _within(el, root) \
@@ -202,12 +219,12 @@ def _hover_marks(root):
             prev = prev.getprevious()
         mark = None
         if prev is not None and not prev.get("data-tf-css-hidden") and MARK.fullmatch(re.sub(r"\s+", "", prev.text_content())) \
-                and not (el.getprevious() is prev and (prev.tail or "").strip()):
+                and not (el.getprevious() is prev and (prev.tail or "").strip()) and not formula(prev):
             mark = prev
         else:
             parent = el.getparent()
             rest = re.sub(r"\s+", "", parent.text_content().replace(el.text_content(), "", 1)) if parent is not None else ""
-            if parent is not None and parent is not root and MARK.fullmatch(rest):
+            if parent is not None and parent is not root and MARK.fullmatch(rest) and not formula(parent, el):
                 mark = parent
         if mark is not None and el.text_content().strip():
             k += 1

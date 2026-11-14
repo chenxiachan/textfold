@@ -31,6 +31,31 @@ python3 -m textfold adapt <url> [--snapshot page.html [--rendered]]          # w
 python3 -m textfold adapt <url> [--snapshot page.html] --try recipe.json     # the page read with a recipe, checked
 ```
 
+## The check, in the reader
+
+A page sent from the browser keeps its snapshot, and the reader checks its reading against it (`adapt.check`, through
+`adapt.stored` and `GET /api/check/<id>`): a folded line under the authors, with examples that open the page at their
+place. The check needs no recipe and is the same for every site:
+
+- **It compares what the reader shows**, block by block (`adapt.reading`): units, headings, figures, raw blocks, the
+  title, authors and date in the header. Not the reading's HTML, which can hold words no unit shows.
+- **It finds the article on the page** from where the reading's words are: the deepest element holding nine tenths
+  of them. The page's comments, recommendations and menus are outside it; what the reading took from outside it (a
+  byline, a count of likes) is said apart, as what may not be the article's.
+- **A formula is compared by its place** (`∮`), on both sides: one drawn (MathML, MathJax, KaTeX, one whose source the
+  extension read), and TeX the page writes in its text for a script to draw, as the reading draws it. A block whose
+  words are there but not its formulas is said as such.
+- **Words, not spaces.** A block is there when its words are, whatever a section's number, a dash or a footnote's digit
+  does; Chinese and Japanese are counted by characters, having no spaces to count words by. A list of links to places
+  on the same page (its contents) is neither the reading's nor missing from it, and a short label is counted apart.
+- **Text that does not fold**: how much of the reading's running text is in raw blocks (not code, not a table), as when
+  a reading view wraps the article's paragraphs in one.
+
+Measured on the 157 pages of the OpenShelf set as fetched, and on 18 pages sent from the browser (2026-11-14): the
+first Zhihu article read had half of its words missing (126 blocks: Zhihu writes a nested list as `<ul><ul>`, which the
+reader skipped) and 19 one-symbol formulas taken for footnotes (the extension read a formula reading `n` as a note's
+mark, its hidden TeX as the note); with both fixed it checks clean but for 5 blocks of the site's furniture.
+
 ## Toward a layer over the live page (a browser extension)
 
 The recipe and the snapshot are made so that the same work can run in a reader's browser, over the page itself:
