@@ -126,11 +126,12 @@ other's marks alone.
 ## Corrections of a translation
 
 The file also keeps the reader's corrections of a translation, made where it is read (**Edit translation**,
-`corrections.py`), by language: `"corrections": {"zh": {"lines": [...]}}`. A line is a sentence of a paragraph's
-translation as the reader wrote it, `{"unit", "k", "source", "text"}`: `k` the sentence, `source` the sentence of the
-text it translates, in the text's own words, and `text` the translation, its formulas and citations as markers
-`⟦a12⟧`. They are not notes: the exports of the notes leave them out. They are laid over the translation each time it
-is made again, while their `source` is still the sentence of the text. A note made in the translation stays on its
+`corrections.py`), by language: `"corrections": {"zh": {"lines": [...], "heads": {...}, "title": {...}}}`. A line is a
+sentence of a paragraph's translation as the reader wrote it, `{"unit", "k", "source", "text"}`: `k` the sentence,
+`source` the sentence of the text it translates, in the text's own words, and `text` the translation, its formulas
+and citations as markers `⟦a12⟧`. `heads` are section titles (`{section id: {"source", "text"}}`, `source` the title
+in the text's own words) and `title` the paper's. They are not notes: the exports of the notes leave them out. They
+are laid over the translation each time it is made again, while their `source` is still what the text says. A note made in the translation stays on its
 words when the translation is corrected: its `tokens`, `sents` and `quote` are those of the place its words are now,
 or of the sentences it was on when its words were rewritten.
 

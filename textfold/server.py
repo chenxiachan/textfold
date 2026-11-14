@@ -19,12 +19,14 @@
   GET  /api/text/<id>         {text, original}: a document's text as Markdown (local.text_of), for the reader to put
                               right (a PDF's OCR, a page's words) and send back to /api/import with its id; original: the text it had
                               when it was last generated, before the edits since (null: none; local.original)
-  GET  /api/translation/<id>  ?lang=&unit=&sents=0,1: a paragraph's translated sentences to put right where they are read,
-                              with the text's own beside them (corrections.lines_of)
+  GET  /api/translation/<id>  ?lang=&unit=&sents=0,1: a translation as text to put right ({text, at}: where the sentences
+                              selected are in it; corrections.text_of)
   POST /api/translation/parts {id, lang, units, chunks}: a translation as it is made (partial), its paragraphs and
                               sections but those named (the page has them): {units, chunks, title, partial}
-  POST /api/translation       {id, lang, unit, lines: {k: line}}: those sentences as the reader wrote them, kept with the
-                              notes and laid over the translation when it is made again (corrections.py)
+  POST /api/translation       {id, lang, text, relevel}: that text as the reader edited it, kept with the notes and laid
+                              over the translation when it is made again (corrections.save; relevel: the paragraphs
+                              changed have their levels written again at the language's next generation). 400 with
+                              {error, line, want, got} when it does not read back one to one
   POST /api/places            {id, spans: [[from, to], ...]}: where each place of that text is read on the page
                               ({places: [{words: [{unit, tokens}], at: {unit, token, after}} | {section} | null]}:
                               local.places), the edit history's changes marked on it
@@ -768,7 +770,7 @@ def make_handler(jobs):
                     if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
                         return self.json({"error": "no such paper"}, 404)
                     try:
-                        return self.json(corrections.lines_of(pid, lang, unit, sents))
+                        return self.json(corrections.text_of(pid, lang, unit, sents))
                     except ValueError as e:
                         return self.json({"error": str(e)}, 404)
                 m = re.fullmatch(r"/api/doc/([\w.-]+)", u.path)   # (a document not folded yet: its local levels, said so)
@@ -939,7 +941,9 @@ def make_handler(jobs):
                     if any(j["pid"] == pid and j["status"] in ("queued", "running") for j in jobs.list()):
                         return self.json({"error": "busy"}, 409)
                     try:
-                        got = corrections.rewrite(pid, lang, str(body.get("unit") or ""), body.get("lines") or {})
+                        got = corrections.save(pid, lang, str(body.get("text") or ""), bool(body.get("relevel")))
+                    except corrections.Shape as e:
+                        return self.json({"error": e.what, "line": e.line, "want": e.want, "got": e.got}, 400)
                     except ValueError as e:
                         return self.json({"error": str(e)}, 400)
                     PAGES.pop(pid, None)

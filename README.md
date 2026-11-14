@@ -182,7 +182,7 @@ Your questions can go to a stronger model than the one that writes the levels: *
 | `F` | focus: the text alone, the bars back at the screen's edge |
 | **Full screen**, in **Aa** | the window fills the screen (⌃⌘F on a Mac, F11 on Windows) |
 | Select text | highlight, write a note, or ask |
-| Select text, then **Edit text** | put the words right; in a translation, **Edit translation** puts the translation right instead, each sentence under its original, and it is kept when the text is translated again |
+| Select text, then **Edit text** | put the words right; in a translation, **Edit translation** opens the whole translation there instead, one sentence a line: save it only, or have its shorter levels written again from your sentences. Your corrections are kept when the text is translated again |
 | **Ask the paper**, bottom right | ask about the whole text (**Look it up on the web**, beside the question: an agent on your computer searches the web too) |
 | `L` | next language |
 | `⌘F` (Ctrl+F) | find words in the text: at the level you read, and in the author's words that level leaves out (the paragraph opens at Full while you are there); Enter and ⇧Enter step through them |

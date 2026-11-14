@@ -123,13 +123,20 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
             store.save_tr(doc, lang, en["version"], model)
         elif cfg is not None:
             store.apply_tr(doc, lang, tr)
+            was = tr.get("model") or model
+            made_by = was if was == model else f"{was} + {model}"
+            left = [uid for uid in tr.get("relevel") or [] if uid in doc["units"]]
+            if left:   # paragraphs the reader corrected, saved to be generated again: their levels, from their sentences
+                check()
+                left = translate.relevel(doc, lang, left, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), stop=stop)
+                check()
+                store.save_tr(doc, lang, en["version"], made_by, relevel=left)
             if translate.gaps(doc, lang):   # paragraphs it was stored without (a call that failed): asked for now
                 check()
                 translate.fill(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), stop=stop)
-                was = tr.get("model") or model
                 check()
                 corrections.apply(pid, doc, lang)
-                store.save_tr(doc, lang, en["version"], was if was == model else f"{was} + {model}")
+                store.save_tr(doc, lang, en["version"], made_by, relevel=left)
     local.settle(pid)   # (its text edited: once generated in every language it was in, its edit history goes)
     progress("done", 1, 1)
     return pid

@@ -527,17 +527,9 @@ dialog.settings.edtext { width: min(900px, calc(100vw - 32px)); }
 .ed-text { display: block; width: 100%; height: min(62vh, 640px); box-sizing: border-box; margin-top: 10px; resize: vertical; padding: 12px 14px;
   font: 13px/1.6 var(--mono); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; outline: none; }
 .ed-text:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-/* a translation put right where it is read (app.js, editTranslation): each sentence under the text's own words */
-dialog.settings.trfix { width: min(760px, calc(100vw - 32px)); }
-.trfix .stp-body { overflow-y: auto; max-height: min(70vh, 720px); }
-.tr-pair { margin-top: 14px; }
-.tr-src { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }
-.tr-line { display: block; width: 100%; box-sizing: border-box; resize: vertical; padding: 9px 12px; font: 15px/1.6 var(--serif, inherit); color: var(--ink);
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; outline: none; }
-.tr-line:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.tr-marks { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; }
-.tr-marks code { font: 12px var(--mono); color: var(--ink); }
-.trfix .tr-said { margin-right: auto; color: var(--muted); font-size: 13px; }
+/* where an edited translation does not read back one to one (app.js, editTranslation): which line */
+.edtext .ed-said { margin: 8px 0 0; color: var(--warn, #B4572B); font-size: 13px; }
+.edtext .ed-said:empty { display: none; }
 /* what is new after an update (app.js, showNews): each change a title and a few lines; the release notes and a star */
 dialog.settings.news { width: min(560px, calc(100vw - 32px)); }
 .news .stp-body { padding-top: 6px; }

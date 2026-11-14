@@ -383,3 +383,87 @@ def reword(doc, lang, uid, sentences):
     for k, z in sentences.items():
         o["sentences"][int(k)] = re.sub(r"\s+", " ", z or "").strip()
     return assemble(u, o, doc["atoms"], lang, lambda w: None)
+
+
+# ── the levels of paragraphs the reader corrected, written again (Edit translation: Save and regenerate) ──────────
+RELEVEL_SCHEMA = {
+    "type": "object",
+    "properties": {"units": {"type": "array", "items": {"type": "object", "properties": {
+        "id": {"type": "string"}, "takeaway": {"type": "string"}, "reason": {"type": "string"}, "topic": {"type": "string"}},
+        "required": ["id", "takeaway", "reason", "topic"]}}},
+    "required": ["units"],
+}
+
+
+def relevel_prompt(doc, chunk, lang, uids):
+    """The short levels in lang of paragraphs of one section whose translation the reader corrected, from their
+    sentences as corrected (the text's own, and its levels, beside them)."""
+    U, A = doc["units"], doc["atoms"]
+    L, b = langs.name(lang), langs.budget(lang)
+    E = langs.name(doc["meta"].get("lang") if doc["meta"].get("lang") in langs.LANGS else "en")
+    unit, acro = b["unit"], " (an English acronym counts as one)" if b["unit"] == "characters" else ""
+    blocks = []
+    for n, uid in enumerate(uids):
+        u, lad, z = U[uid], U[uid]["lad"], U[uid]["tr"][lang]
+        kind = KIND.get(u["role"], "paragraph") + (f" inside {u['env']['title']}" if u.get("env") else "")
+        reason = plain(lad["brief"][lad["tn"] + 1:-1], A) if len(lad["brief"]) > lad["tn"] + 1 else ""
+        blocks.append("\n".join(
+            [f"[U{n}] {kind}"] + [f"  {E} {i}: {marked(u['toks'][s:e], A)}" for i, (s, e) in enumerate(u["sents"])]
+            + [f"  {L} {i}: {marked(z['toks'][s:e], A)}" for i, (s, e) in enumerate(z["sents"])]
+            + [f"  {E} takeaway: {plain(lad['brief'][:lad['tn']], A)}", f"  {E} reason: {reason}", f"  {E} topic: {plain(lad['topic'], A)}"]))
+    head = f"{chunk['num']} {chunk['title']}".strip()
+    return kinds.adapt(f"""A reader corrected by hand the {L} translation of some paragraphs of a research paper. Write their short zoom levels in {L} again, from the {L} sentences as the reader corrected them.
+
+Paper: {doc['meta']['title']}
+This section: {head}
+
+Each unit lists its {E} sentences, the {L} sentences as corrected, then the {E} short levels already written for it.
+
+{chr(10).join(blocks)}
+
+Rules:
+- Use the words, names and terms of the corrected {L} sentences, never others for them.
+- takeaway: the {E} takeaway as natural {L} of at most {b['takeaway']} {unit}, conclusion first.
+- reason: the {E} reason as natural {L} of at most {b['reason']} {unit}; "" when the {E} reason is empty.
+- topic: at most {b['topic']} {unit}{acro}, copied VERBATIM from inside the {L} takeaway.
+- {langs.punctuation_rule(lang)} Math only by copying a marker ⟦…⟧.
+
+Return JSON {{"units": [{{"id": "U0", "takeaway": "...", "reason": "...", "topic": "..."}}, ...]}} with exactly one entry per unit, in order.""", doc["meta"])
+
+
+def relevel(doc, lang, uids, cfg, cache_dir, jobs=4, log=print, progress=None, stop=None):
+    """The levels in lang of the paragraphs uids (corrected by the reader) written again, section by section, their
+    sentences kept as they are. The paragraphs left as they were (a call that failed), to be asked for again."""
+    by_chunk = [(c, [uid for uid in c["units"] if uid in set(uids) and lang in doc["units"][uid].get("tr", {})]) for c in doc["chunks"]]
+    tasks = [(c, us) for c, us in by_chunk if us]
+    tick, _ = _counter(progress, len(tasks))
+    left = []
+
+    def run(task):
+        c, us = task
+        if stop is not None and stop.is_set():
+            return task, None, llm.Stopped()
+        try:
+            with llm.stoppable(stop):
+                return task, llm.call(relevel_prompt(doc, c, lang, us), RELEVEL_SCHEMA, cfg, cache_dir, False, system=llm.system_for(doc["meta"])), None
+        except Exception as e:
+            return task, None, e
+    with ThreadPoolExecutor(jobs) as ex:
+        for _, ((c, us), res, err) in llm.as_answered(ex, lambda it: (it[0], run(it[1])), list(enumerate(tasks)), log, llm.label(cfg)):
+            tick()
+            if stop is not None and stop.is_set():
+                raise llm.Stopped()
+            if err:
+                log(f"  ! {lang} {c['id']} levels: {err}")
+                left += us
+                continue
+            by_id = {x.get("id"): x for x in llm.units_of(res[0]["out"])}
+            for n, uid in enumerate(us):
+                o, u = by_id.get(f"U{n}"), doc["units"][uid]
+                made = assemble(u, {**(o or {}), "sentences": said(u["tr"][lang])["sentences"]}, doc["atoms"], lang, lambda w: None) if o else None
+                if made:
+                    u["tr"][lang] = made
+                else:
+                    left.append(uid)
+            log(f"  ✓ {lang} {c['id']:<14} {len(us):>2} units' levels again")
+    return left

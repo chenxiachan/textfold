@@ -20,7 +20,7 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const api = (path, body) => fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    .then(async (r) => { const d = await r.json(); if (!r.ok) throw Object.assign(new Error(d.error || r.statusText), { code: d.code }); return d; });
+    .then(async (r) => { const d = await r.json(); if (!r.ok) throw Object.assign(new Error(d.error || r.statusText), { code: d.code, data: d }); return d; });
   let modelData = BOOT.modelData || null, modelRefresh = null;
   function refreshModels() {
     if (!modelRefresh) modelRefresh = (async () => {
@@ -1332,43 +1332,64 @@
       save.onclick = () => keep(!!modelName);
       if (only) only.onclick = () => keep(false);
     }
-    // A translation put right where it is read (corrections.py), from Edit translation on words selected in it: the
-    // sentences selected, each under the text's own words, saved as written (no model is asked)
+    // A translation put right where it is read (corrections.py), as the text's own words are (editText): the whole
+    // translation as text, a title after # or ##, one sentence a line as in the original, opened at the words selected;
+    // saved, and then either its shorter levels written again by the model from the sentences as corrected (the
+    // paragraphs changed: Save and regenerate), or kept as they are (Save only). Where the text no longer reads back
+    // one to one (a line added, a paragraph merged), it says which line, and the caret goes there.
     async function editTranslation(a) {
       const T = t(), lang = a.lang;
       if (jobFor(PAPER.id)) { alert(T.ed_busy); return; }
       let got;
-      try { got = await api(`/api/translation/${encodeURIComponent(PAPER.id)}?lang=${encodeURIComponent(lang)}&unit=${encodeURIComponent(a.unit)}&sents=${(a.sents || []).join(',')}`); }
+      try { got = await api(`/api/translation/${encodeURIComponent(PAPER.id)}?lang=${encodeURIComponent(lang)}&unit=${encodeURIComponent(a.unit || '')}&sents=${(a.sents || []).join(',')}`); }
       catch (x) { alert(errText(x.message)); return; }
-      const dlg = h('dialog', 'settings prefs edtext trfix'); document.body.append(dlg);
-      const pairs = got.lines.map((l, i) => `<div class="tr-pair"><p class="tr-src">${esc(got.source[i])}</p>` +
-        `<textarea class="tr-line" data-k="${got.sents[i]}" lang="${esc(lang)}" rows="2" spellcheck="false">${esc(l)}</textarea></div>`).join('');
-      const marks = got.marks.length ? `<p class="tr-marks">${esc(T.tr_marks)} ${got.marks.map((m) => `<code>⟦${esc(m.n)}⟧</code> ${esc(m.what)}`).join(' · ')}</p>` : '';
+      const text = got.text;
+      const dlg = h('dialog', 'settings prefs edtext'); document.body.append(dlg);
       dlg.innerHTML = `<div class="stp"><header class="stp-head"><h2>${esc(T.tr_title)}</h2><button type="button" class="stp-x" aria-label="${esc(T.close)}" title="${esc(T.close)}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8"/></svg></button></header>
-        <div class="stp-body"><p class="st-note">${esc(T.tr_note)}</p>${pairs}${marks}</div>
-        <footer class="stp-foot"><p class="tr-said" role="status"></p><button type="button" class="st-btn ed-cancel">${esc(T.cancel)}</button>` +
-        `<button type="button" class="primary tr-save">${esc(T.save)}</button></footer></div>`;
+        <div class="stp-body"><p class="st-note">${esc(T.tr_note)}</p><textarea class="ed-text" spellcheck="false" lang="${esc(lang)}"></textarea><p class="ed-said" role="alert"></p></div>
+        <footer class="stp-foot"><p>${esc(T.tr_whole)}</p><button type="button" class="st-btn ed-cancel">${esc(T.cancel)}</button>` +
+        (modelName ? `<button type="button" class="st-btn ed-only" title="${esc(T.ed_only_tip)}">${esc(T.ed_only)}</button>` : '') +
+        `<button type="button" class="primary ed-save">${esc(modelName ? T.ed_save : T.save)}</button></footer></div>`;
+      const ta = dlg.querySelector('.ed-text'), save = dlg.querySelector('.ed-save'), only = dlg.querySelector('.ed-only'), said = dlg.querySelector('.ed-said');
       dlg.addEventListener('close', () => dlg.remove());
       dlg.querySelector('.stp-x').onclick = dlg.querySelector('.ed-cancel').onclick = () => dlg.close();
       dlg.showModal();
-      const lines = [...dlg.querySelectorAll('.tr-line')], said = dlg.querySelector('.tr-said'), buttons = [...dlg.querySelectorAll('button')];
-      for (const ta of lines) { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; }
-      // the words selected, selected in their line, else the first line ready to be written in
-      const words = ((a.quote && a.quote.exact) || '').trim(), at = words && lines.find((ta) => ta.value.includes(words));
-      if (at) { at.focus(); at.setSelectionRange(at.value.indexOf(words), at.value.indexOf(words) + words.length); } else if (lines[0]) lines[0].focus();
-      dlg.querySelector('.tr-save').onclick = async () => {
-        const changed = Object.fromEntries(lines.filter((ta, i) => ta.value !== got.lines[i]).map((ta) => [ta.dataset.k, ta.value]));
-        if (!Object.keys(changed).length) { dlg.close(); return; }
-        buttons.forEach((b) => { b.disabled = true; });
-        try {
-          await api('/api/translation', { id: PAPER.id, lang, unit: a.unit, lines: changed });
-          dlg.close();
-          reopen(lang);
-        } catch (x) {
-          buttons.forEach((b) => { b.disabled = false; });
-          said.textContent = x.message === 'markers' ? T.tr_err_markers : x.message === 'busy' ? T.ed_busy : errText(x.message);
-        }
+      // the words selected in the sentences they are in, else those sentences, else the top: the text above them
+      // measured where it wraps
+      const words = ((a.quote && a.quote.exact) || '').trim(), span = got.at || [0, 0];
+      const w = words ? text.indexOf(words, span[0]) : -1, inSpan = w >= 0 && w <= span[1];
+      const sel = inSpan ? [w, w + words.length] : span;
+      const goTo = (from, to) => {
+        const now = ta.value;
+        ta.value = now.slice(0, from);
+        const above = ta.scrollHeight;
+        ta.value = now;
+        ta.focus();
+        ta.setSelectionRange(from, to);
+        ta.scrollTop = Math.max(0, above - ta.clientHeight / 3);
       };
+      ta.value = text;
+      goTo(sel[0], sel[1]);
+      const lineAt = (n) => { const ls = ta.value.split('\n'); let at = 0; for (let k = 0; k < Math.max(0, n - 1) && k < ls.length; k++) at += ls[k].length + 1; return [at, at + (ls[n - 1] || '').length]; };
+      const wrong = (x) => {
+        const d = x.data || {}, msg = { lines: T.tr_err_lines, head: T.tr_err_head, more: T.tr_err_more, less: T.tr_err_less, markers: T.tr_err_markers }[x.message];
+        said.textContent = msg ? msg.replace('{line}', d.line).replace('{want}', d.want).replace('{got}', d.got) : x.message === 'busy' ? T.ed_busy : errText(x.message);
+        if (msg && d.line) goTo(...lineAt(d.line));
+      };
+      const keep = async (relevel) => {
+        if (ta.value === text) { dlg.close(); return; }
+        save.disabled = true;
+        if (only) only.disabled = true;
+        said.textContent = '';
+        let r;
+        try { r = await api('/api/translation', { id: PAPER.id, lang, text: ta.value, relevel }); }
+        catch (x) { save.disabled = false; if (only) only.disabled = false; wrong(x); return; }
+        dlg.close();
+        if (relevel && r.relevel) { const update = toastFor(lang); submit(PAPER.id, lang, false, update).catch(update.fail); return; }
+        reopen(lang);
+      };
+      save.onclick = () => keep(!!modelName);
+      if (only) only.onclick = () => keep(false);
     }
     // Its edit history, on the page itself (from the top bar: PAPER.history): each place the edits since it was last
     // generated changed (placesOf), found where it is read (local.places) and marked in the text at Full (reader.js,
