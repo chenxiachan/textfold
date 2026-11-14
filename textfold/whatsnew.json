@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.10.53",
+    "en": [
+      ["Edit a translation", "Select words in a translation and choose Edit translation: the whole translation opens at them, one sentence a line as in the original. Save it as it is, or have its shorter levels written again from your sentences. Your corrections stay when the text is translated again."],
+      ["A translation shown as it is made", "A language translated for the first time opens as soon as its first section is in, and the other sections come in one at a time."],
+      ["Figures zoom", "An enlarged figure zooms as the original PDF does: − and +, ⌘ or Ctrl and the wheel, a pinch, or a click where you want to look. Drag it to see the rest."],
+      ["Research blogs as they were made", "A web page's interactive figures run in their place, loaded from their site; its formulas are drawn as written, and pictures its page sets side by side stay side by side."]
+    ],
+    "zh": [
+      ["修改译文", "在译文里选中文字，点“修改译文”，整篇译文会在那里打开，和原文一样每句一行。可以只保存，也可以按你改过的句子重新生成较短各层。以后重新翻译，你的改动也会保留。"],
+      ["边翻译边显示", "第一次翻译一个语言时，第一节翻好就切换过去，其余的一节一节补上。"],
+      ["图片可以缩放", "放大后的图和原文 PDF 一样可以缩放：用 − 和 +、⌘ 或 Ctrl 加滚轮、双指，或者在想看的地方点一下。拖动可以看其余部分。"],
+      ["研究博客按原样显示", "网页里的交互图在原来的位置照常运行（从原网站加载）；公式按原样显示，网页并排放的几张图也保持并排。"]
+    ]
+  },
+  {
     "version": "0.10.52",
     "en": [
       ["Antigravity as a local agent (experimental)", "If Google's Antigravity CLI (agy) is on your computer and signed in, TextFold finds it and lists its models in Settings, as it does Claude Code and Codex."],
