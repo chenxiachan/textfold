@@ -650,11 +650,14 @@ def _said(page_parts, url, doc, read, area):
         if len(t.split()) >= 6 and flat.count(head.replace(" ", "")) != 1:
             twice.append(head)
     missing, elsewhere, moved, short, in_order = {}, {}, [], [], []
-    page_blocks = 0
+    page_blocks, article, lacked = 0, 0, 0   # (the article's text, and how much of it the reading lacks, in characters)
     for (el, t, raw), s in zip(blocks, state):
         inside = el is area or webpage._within(el, area)
         if inside and (_long(t, 8) or len(t) >= 24):
             page_blocks += 1
+        if inside and s != "contents":
+            article += len(t)
+            lacked += len(t) if s == "missing" else 0
         if s == "formulas" and inside:
             moved.append(raw)
         elif s == "missing" and inside and not (_long(t, 4) or len(t) >= 20):
@@ -675,7 +678,7 @@ def _said(page_parts, url, doc, read, area):
             "article": "the recipe's" if hit is not None else _sig(area),
             "not on the page": not_seen[:8], "not on the page (count)": len(not_seen),
             "missing": group(missing, 12), "missing (blocks)": sum(len(v) for v in missing.values()),
-            "missing (in order)": in_order[:12],
+            "missing (in order)": in_order[:12], "missing (share)": round(lacked / article, 3) if article else 0.0,
             "missing, short": len(short), "missing, short (e.g.)": short[:5],
             "formulas not there": len(moved), "formulas not there (e.g.)": moved[:12],
             "from outside the article": len(outside), "from outside the article (e.g.)": outside[:5],
@@ -767,7 +770,8 @@ _CHECKED = {}   # pid: (the times of its files, what stored said): said again wh
 
 def stored(pid):
     """A page kept with its snapshot (snapshot.html: one sent from the browser) checked against its reading as the
-    reader shows it, for the reader to say (/api/check): how much of its text is in blocks that do not fold
+    reader shows it, for the reader to say (/api/check): what share of the article's text it lacks (missing_share,
+    0 to 1); how much of its text is in blocks that do not fold
     (not_folding, 0 to 1); how many blocks of the article the reading lacks (missing;
     short: a label, a short item), whose formulas are not there (formulas), what the reading has that the page does
     not show (not_on_page), what it took from outside the article (outside), each with examples as the page writes
@@ -792,7 +796,7 @@ def stored(pid):
            "not_on_page": c["not on the page (count)"], "not_on_page_eg": c["not on the page"],
            "outside": c["from outside the article"], "outside_eg": c["from outside the article (e.g.)"],
            "f_page": c["formulas"]["page"], "f_reading": c["formulas"]["reading"], "edited": bool(meta.get("replaced")),
-           "not_folding": c["not folding"]}
+           "not_folding": c["not folding"], "missing_share": c["missing (share)"]}
     _CHECKED[pid] = (key, got)
     return got
 

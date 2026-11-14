@@ -673,8 +673,12 @@
     paperHead.append(box);
     const head = t.vs_head + (t.vs_head.endsWith('：') ? '' : ' ');   // (a full-width colon has its space in it)
     if (!bad.length && !soft.length) { box.textContent = head + t.vs_none; return; }
+    // red only when the reading lacks much of the article: a tenth of its text, a tenth of its formulas (three at
+    // least), or half of its text does not fold. A block or two lacking, a date, a byline: said in the line's own grey
+    const lost = c.f_page - c.f_reading;
+    const much = c.missing_share >= 0.1 || (lost >= 3 && lost >= 0.1 * c.f_page) || c.not_folding >= 0.5;
     const det = h('details');
-    const sum = h('summary', bad.length ? 'vs-bad' : null);
+    const sum = h('summary', much ? 'vs-bad' : null);
     sum.textContent = head + [...bad, ...soft].map(([k, label]) => say(label, k)).join(' · ');
     const body = h('div', 'vs-body');
     body.append(h('p', 'vs-note', esc(t.vs_note + (c.edited ? ` ${t.vs_edited}` : ''))));
