@@ -2,8 +2,9 @@
 a pip install alike (app.js, the page's dialog).
 
 whatsnew.json, beside this file, is written with each release that has something to say: [{version, en, zh}], each
-language's words a list of [title, text], plain text, and after a change a link may follow, to act on it at once:
-[title, text, {url, label}] (the page's button: the store listing of the browser's button, say). The page shows the reader's language, Traditional Chinese the
+language's words a list of [title, text], plain text, and after a change what shows it and a link to act on it at
+once may follow: [title, text, {media, url, label}], each optional (media: a picture of web/news, shipped with the
+app, so that the page asks no other server; url and label: the page's button, the browser's button's store listing). The page shows the reader's language, Traditional Chinese the
 Chinese, every other the English. A release with no entry is a quiet one: the page says only that it is installed.
 The release the reader was last told of is kept in the library's folder (whatsnew.json there, {seen}); a first
 install is told nothing, and a library from before this file (documents in it, no release told of) is told of the

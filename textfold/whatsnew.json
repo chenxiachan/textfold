@@ -2,12 +2,10 @@
   {
     "version": "0.10.54",
     "en": [
-      ["TextFold in your browser", "TextFold's button for Chrome, Brave and Edge is in the Chrome Web Store. One click sends the page you are reading to TextFold as you see it, signed in or past a paywall you pay for, and the folded page opens beside it.", {"url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "Add to Chrome"}],
-      ["Your tools, in Settings", "Settings now ends with the links to TextFold's button for your browser and to TextFold Bridge, its plugin for Obsidian, to find them again whenever you need them."]
+      ["🎉 The browser button is officially here", "Testing is over: TextFold's button is now in the Chrome Web Store, for Chrome, Brave and Edge 🧩 We've long felt that the good stuff isn't only in PDFs anymore. It's in technical blogs, on publishers' article pages, in the posts you sign in or subscribe to read. Now, when you find one worth reading, one click puts it in TextFold 📥 The page is folded into five levels and opens right beside the original, so you can skim the gist or read every word. Highlights, notes, questions and translation all work just as they do with papers ✨", {"media": "browser.webp", "url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "Add to Chrome"}]
     ],
     "zh": [
-      ["在浏览器里用 TextFold", "TextFold 的浏览器按钮已上架 Chrome 网上应用店，Chrome、Brave 和 Edge 都能用。点一下，就把正在读的网页按你看到的样子交给 TextFold，登录后的、你订阅的内容都一样，折好的页面在网页旁边打开。", {"url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "添加到 Chrome"}],
-      ["设置里的工具链接", "设置的最后一节放了浏览器按钮和 Obsidian 插件 TextFold Bridge 的链接，以后随时都能找到。"]
+      ["🎉 浏览器插件正式上线", "测试结束啦！TextFold 的浏览器按钮正式上架 Chrome 网上应用店，Chrome、Brave、Edge 都能装 🧩 我们一直觉得，好内容早就不只在 PDF 里：技术博客、出版社的文章页，还有要登录或订阅才看得到的文章。现在看到一篇想读的，点一下就进了 TextFold 📥 网页会折成五层，在原网页旁边打开，扫一眼大意还是逐字细读都随你。高亮、笔记、提问、翻译，和读论文时一样好用 ✨", {"media": "browser.webp", "url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "添加到 Chrome"}]
     ]
   },
   {

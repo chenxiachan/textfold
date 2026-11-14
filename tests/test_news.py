@@ -79,13 +79,22 @@ class Package(unittest.TestCase):
         self.assertEqual(len({e["version"] for e in got}), len(got))
         for e in got:
             self.assertRegex(e["version"], r"^\d+\.\d+\.\d+$")
-            for lang in ("en", "zh"):   # [title, text], and a link to follow it with: {url (https), label}
+            for lang in ("en", "zh"):   # [title, text], and what shows it and a link to act on it: {media, url (https), label}
                 self.assertTrue(e[lang] and all(len(x) in (2, 3) and all(isinstance(w, str) and w.strip() for w in x[:2]) for x in e[lang]), (e["version"], lang))
                 for x in e[lang]:
                     if len(x) == 3:
-                        self.assertTrue(x[2]["url"].startswith("https://") and x[2]["label"].strip(), (e["version"], lang))
+                        self.assertLessEqual(set(x[2]), {"media", "url", "label"})
+                        if "url" in x[2]:
+                            self.assertTrue(x[2]["url"].startswith("https://") and x[2]["label"].strip(), (e["version"], lang))
+                        if "media" in x[2]:   # (shipped with the app: the page asks no other server for it)
+                            self.assertTrue((Path(news.__file__).parent / "web" / "news" / x[2]["media"]).is_file(), x[2]["media"])
                         self.assertEqual([len(y) for y in e["en"]], [len(y) for y in e["zh"]], e["version"])
             self.assertEqual(len(e["en"]), len(e["zh"]), e["version"])
+
+    def test_its_pictures_are_served_and_nothing_else(self):
+        self.assertIsNotNone(server.news_file("browser.webp"))
+        for other in ("../app.js", "../../server.py", "", "../vendor/katex/katex.min.css", "browser.svg"):
+            self.assertIsNone(server.news_file(other), other)
 
     def test_it_goes_into_the_package(self):
         toml = (Path(news.__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")

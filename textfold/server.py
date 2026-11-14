@@ -134,6 +134,14 @@ def vendor_file(rel):
     return f if rel and root in f.parents and f.is_file() and f.suffix in VENDOR_TYPES else None
 
 
+def news_file(name):
+    """A picture of What's new (whatsnew.json: an item's media) by its name under /static/news/, or None: web/news's
+    own pictures, nothing else."""
+    root = (build.WEB / "news").resolve()
+    f = (root / name).resolve()
+    return f if name and f.parent == root and f.is_file() and f.suffix in IMAGE_TYPES else None
+
+
 # Only an explicit refresh contacts local services. Page rendering reads the last results,
 # and a failed probe leaves that service's previous result available.
 DISCOVERY = {"live": {"ollama": [], "bridge": None}, "bridge": {"running": False, "node": bool(shutil.which("npx"))},
@@ -706,6 +714,10 @@ def make_handler(jobs):
                     f = vendor_file(unquote(u.path[len("/static/vendor/"):]))
                     if f:
                         return self.send(200, f.read_bytes(), VENDOR_TYPES[f.suffix], cache="max-age=86400")
+                if u.path.startswith("/static/news/"):
+                    f = news_file(unquote(u.path[len("/static/news/"):]))
+                    if f:
+                        return self.send(200, f.read_bytes(), IMAGE_TYPES[f.suffix], cache="max-age=86400")
                 if u.path == "/api/papers":
                     return self.json(listed())
                 if u.path == "/api/folders":

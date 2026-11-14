@@ -1026,6 +1026,8 @@
     dlg.innerHTML = `<div class="stp"><header class="stp-head"><h2>${esc(T.wn_title.replace('{v}', v))}</h2><button type="button" class="stp-x" aria-label="${esc(T.close)}" title="${esc(T.close)}">${svg('x')}</button></header>
       <div class="stp-body">${list.map((e) => (list.length > 1 ? `<h3 class="wn-v">TextFold ${esc(e.version)}</h3>` : '') +
         words(e).map(([title, text, go]) => `<div class="wn-item"><b>${esc(title)}</b><p>${esc(text)}</p>` +
+          // (a picture of it, shipped with the app: web/news; a link to act on it at once)
+          (go && /^[\w-]+\.(webp|png|jpe?g|gif)$/.test(go.media || '') ? `<img class="wn-media" src="/static/news/${esc(go.media)}" alt="">` : '') +
           (go && /^https:\/\//.test(go.url || '') ? `<a class="st-btn wn-link" href="${esc(go.url)}" target="_blank" rel="noopener">${esc(go.label)}${svg('out')}</a>` : '') +
           '</div>').join('')).join('')}</div>
       <footer class="stp-foot"><p><a href="${REPO}" target="_blank" rel="noopener">★ ${esc(T.wn_star)}</a></p>
