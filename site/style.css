@@ -100,6 +100,17 @@ main > section.wrap { padding-block: 80px 0; }
 .which em { font-style: normal; font-family: var(--mono); font-size: .9em; color: var(--ink); }
 .meta { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
 
+/* ── the browser's button ────────────────── */
+.hero-ext { margin: 14px 0 0; font-size: 15px; font-weight: 550; }
+.hero-ext a { text-decoration: none; }
+.hero-ext a:hover { text-decoration: underline; }
+.card.ext { align-items: center; }
+.card.ext .btn { margin: 8px 0 4px; }
+.card.ext .fine { flex: none; margin: 6px 0 0; }
+.ext-clip { margin: 0; }
+.ext-clip video { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.ext-clip figcaption { margin-top: 8px; }
+
 /* ── see it work ─────────────────────────── */
 .clips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 20px; }
 .clips figure { margin: 0; }

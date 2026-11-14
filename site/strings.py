@@ -7,6 +7,7 @@ SITE = "https://chenxiachan.github.io/textfold/"
 REPO = "https://github.com/chenxiachan/textfold"
 DL = REPO + "/releases/latest/download/"
 FILES = {"mac_arm": "TextFold-mac-arm64.dmg", "mac_x64": "TextFold-mac-x64.dmg", "win": "TextFold-win-x64-setup.exe"}
+STORE = "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf"   # the browser's button
 LANGS_NATIVE = "English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português, Italiano, Русский, हिन्दी, Svenska, Dansk, Norsk bokmål, Suomi, Nederlands, Polski, Čeština, Українська, Türkçe, Bahasa Indonesia, Tiếng Việt, ภาษาไทย"   # textfold/langs.py's, by their own names (tests/test_languages.py)
 
 S = {
@@ -26,6 +27,8 @@ S = {
         '接入流程'),
     "nav_docs": ('Docs',
         '文档'),
+    "nav_ext": ('Browser',
+        '浏览器插件'),
     "lang_other": ('中文',
         'English'),
 
@@ -58,6 +61,22 @@ S = {
         '放进你的 Agent'),
     "agent_p": ('In Claude Code, every reply gets five levels, one key each, with no second model.',
         '在 Claude Code 里，每条回复都有五层，一个键一层，不用第二个模型。'),
+
+    # the browser's button (README: Works in your browser; its store listing)
+    "hero_ext": ('New: the TextFold button for Chrome →',
+        '新：Chrome 上的 TextFold 按钮 →'),
+    "ext_h": ('In your browser',
+        '在浏览器里用'),
+    "ext_p": ("One click sends the page you are reading to TextFold, as you see it: signed in, past a paywall you pay for, drawn by its scripts. With TextFold open, the page opens folded beside it.",
+              "点一下，就把正在读的网页按你看到的样子交给 TextFold：登录后的、你订阅的、由脚本画出来的内容都一样。TextFold 开着时，折好的页面在网页旁边打开。"),
+    "ext_for": ('For Chrome, Brave and Edge, from the Chrome Web Store.',
+        '适用于 Chrome、Brave 和 Edge，从 Chrome 网上应用店安装。'),
+    "ext_btn": ('Add to Chrome',
+        '添加到 Chrome'),
+    "ext_fine": ('It hands the page to TextFold on this computer and to nothing else (<a href="privacy.html">privacy</a>). It needs the TextFold app above, or the Python package and <code>python3 -m textfold capture install</code>, once.',
+        '它只把网页交给本机的 TextFold，不交给任何别处（<a href="privacy.html#zh">隐私政策</a>）。需要先装好上面的 TextFold 软件，或者 Python 包再运行一次 <code>python3 -m textfold capture install</code>。'),
+    "ext_cap": ('A Wikipedia article, sent to TextFold with one click, then folded level by level.',
+        '一篇维基百科文章，点一下传进 TextFold，再一层层折叠。'),
 
     "app_p": ('Nothing else to install. It finds Claude Code, Codex, Pi, WorkBuddy or Antigravity on your computer, or connects a free model in one click.',
         '不用再装别的。它会找到你电脑上的 Claude Code、Codex、Pi、WorkBuddy 或 Antigravity，也能一键连上免费模型。'),

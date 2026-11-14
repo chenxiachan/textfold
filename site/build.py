@@ -19,7 +19,7 @@ import pathlib
 import re
 import shutil
 
-from strings import DL, FAQ, FILES, LANGS_NATIVE, REPO, S, SITE, TYPED, VERSION
+from strings import DL, FAQ, FILES, LANGS_NATIVE, REPO, S, SITE, STORE, TYPED, VERSION
 
 HERE = pathlib.Path(__file__).parent
 OUT = HERE / "dist"
@@ -27,7 +27,7 @@ FONT_DIR = HERE.parent / "textfold" / "web" / "vendor" / "fonts"   # the app's, 
 # the recordings beside the README's media: the posters in git, the videos not (kept as files of the gallery
 # repository's release site-clips, which the site's workflow puts here)
 CLIPS = HERE.parent / "docs" / "assets"
-CLIP_NAMES = ("levels", "pdf", "notes", "language", "word")
+CLIP_NAMES = ("levels", "pdf", "notes", "language", "word", "browser")
 GALLERY_SKIP = {".git", ".github", "fixes", "README.md", ".nojekyll"}   # the repository's, not the site's
 IX = {"en": 0, "zh": 1}
 PAGE = {"en": SITE, "zh": SITE + "zh.html"}
@@ -66,6 +66,7 @@ def body(lang, preview=False):
         "lang_href": "#" if preview else ("zh.html" if lang == "en" else "./"),
         "lang_other_code": HTML_LANG[other],
         "dl_mac_arm_url": DL + FILES["mac_arm"], "dl_mac_x64_url": DL + FILES["mac_x64"], "dl_win_url": DL + FILES["win"],
+        "ext_url": STORE,
         "typer_json": esc(json.dumps({"prefix": s("typer_prefix", lang), "phrases": TYPED[lang]}, ensure_ascii=False), quote=True),
         "assets": "assets/",
         "faq": "".join(f"<div><h3>{s(q, lang)}</h3><p>{s(a, lang)}</p></div>" for q, a in FAQ),
@@ -182,6 +183,7 @@ Models and agents now write more than people can read. TextFold keeps the whole 
 
 - Five levels per paragraph. Full and Brief keep the author's own words; Key, Takeaway and Topic are written by a model, each line anchored to the author's sentences it rests on.
 - Reads arXiv, PubMed Central, bioRxiv, medRxiv, DOIs whose full text is open in Europe PMC, Wikipedia, GitHub READMEs, any web page, PDF, Word, PowerPoint, Excel, EPUB, HTML, CSV, pictures, Markdown, text, and a Zotero 7 library.
+- A button for Chrome, Brave and Edge ([Chrome Web Store]({STORE})) sends the page the reader is on to TextFold as they see it: signed in, past a paywall they pay for, drawn by its scripts. It hands the page to TextFold on the same computer and to nothing else.
 - Uses a model the reader already has: Claude Code, Codex, Pi, WorkBuddy or Antigravity on the computer, a ChatGPT plan, free models on OpenRouter, or an API key (Anthropic, OpenAI, DeepSeek, Qwen, Zhipu GLM, Kimi, MiniMax, Google, Ollama, any OpenAI-compatible endpoint).
 - Many languages, translated sentence by sentence: {LANGS_NATIVE}.
 - The library stays on the reader's computer, and there is no account.

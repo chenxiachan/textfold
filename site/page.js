@@ -27,7 +27,7 @@
   }
 
   // ── the clips: loaded and played when they come into view, paused when they leave ──
-  const clips = [...document.querySelectorAll('.clips video')];
+  const clips = [...document.querySelectorAll('.clips video, .ext-clip video')];
   if (still) clips.forEach((v) => { v.controls = true; v.preload = 'none'; v.src = v.dataset.src; });
   else if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver((es) => es.forEach(({ target: v, isIntersecting }) => {

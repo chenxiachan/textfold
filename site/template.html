@@ -6,6 +6,7 @@
   <nav aria-label="{{nav_download}}">
     <a class="opt" href="#download">{{nav_download}}</a>
     <a href="gallery/">{{nav_gallery}}</a>
+    <a class="opt" href="#browser">{{nav_ext}}</a>
     <a class="opt" href="#pipeline">{{nav_pipe}}</a>
     <a class="opt" href="{{readme}}" rel="noopener">{{nav_docs}}</a>
     <a href="{{repo}}" rel="noopener">★ GitHub</a>
@@ -22,6 +23,7 @@
         <a class="cta primary" data-cta href="{{dl_mac_arm_url}}"><span class="cta-t" data-cta-t>{{cta_mac}}</span><span class="cta-s" data-cta-s>{{cta_mac_sub}}</span></a>
         <div class="cmd"><code>python3 -m pip install textfold</code><button type="button" class="copy" data-copy="python3 -m pip install textfold" data-done="{{copied}}">{{copy}}</button></div>
       </div>
+      <p class="hero-ext"><a href="#browser">{{hero_ext}}</a></p>
     </div>
     <figure class="logo-fig" hidden><canvas class="logo-art" role="img" aria-label="{{logo_alt}}"></canvas></figure>
   </section>
@@ -80,6 +82,19 @@ claude plugin install textfold@textfold</code></pre>
       <p class="which">{{which_mac}}</p>
       <p class="meta">{{app_meta}} <a href="{{repo}}/releases/latest" rel="noopener">{{notes}}</a></p>
     </div>
+  </section>
+
+  <section id="browser" class="wrap wide">
+    <h2>{{ext_h}}</h2>
+    <article class="card wide ext">
+      <div class="py-text">
+        <p class="for">{{ext_p}}</p>
+        <p class="for">{{ext_for}}</p>
+        <a class="btn" href="{{ext_url}}" rel="noopener">{{ext_btn}}</a>
+        <p class="fine">{{ext_fine}}</p>
+      </div>
+      <figure class="ext-clip"><video data-src="{{assets}}clips/browser.mp4" poster="{{assets}}clips/browser.jpg" muted loop playsinline width="1200" height="900" aria-label="{{ext_cap}}"></video><figcaption class="fine">{{ext_cap}}</figcaption></figure>
+    </article>
   </section>
 
   <section id="see" class="wrap wide">
