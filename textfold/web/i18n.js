@@ -874,6 +874,22 @@ window.DR_I18N = (() => {
     hi: { tr_fix: "अनुवाद सुधारें", tr_title: "अनुवाद सुधारें", tr_note: "सिर्फ़ यह अनुवाद बदलता है, कुछ भी फिर से नहीं बनता। आपके नोट्स अपने शब्दों पर बने रहते हैं। हर वाक्य के ऊपर मूल पाठ है।", tr_marks: "इनमें से हर एक को एक बार रखें:", tr_term: "पूरे पाठ में:", tr_term_go: "हर जगह बदलें", tr_term_tip: "इस पाठ के लिए याद रखा गया: फिर से बना अनुवाद भी ऐसे ही लिखा जाएगा।", tr_done: "{n} जगह बदला गया।", tr_err_markers: "हर ⟦…⟧ को एक बार रखें: यह किसी सूत्र, उद्धरण या संदर्भ के लिए है।", tr_err_none: "इस अनुवाद में “{w}” नहीं है।" },
   };
   for (const [code, words] of Object.entries(TRFIX)) Object.assign(S[code], words);
+  // an interactive figure of a web page, in its frame (reader.js, embeds): what it is, and its own page
+  const EMBEDS = {
+    en: { embed_live: "Interactive, from its page", embed_open: "Open it on its own" },
+    zh: { embed_live: "交互图，来自原网页", embed_open: "单独打开" },
+    "zh-Hant": { embed_live: "互動圖，來自原網頁", embed_open: "單獨開啟" },
+    ja: { embed_live: "インタラクティブな図（元のページから）", embed_open: "単独で開く" },
+    ko: { embed_live: "인터랙티브 그림, 원래 페이지에서", embed_open: "따로 열기" },
+    es: { embed_live: "Interactiva, de su página", embed_open: "Abrirla aparte" },
+    fr: { embed_live: "Interactive, depuis sa page", embed_open: "L’ouvrir seule" },
+    de: { embed_live: "Interaktiv, von ihrer Seite", embed_open: "Für sich öffnen" },
+    pt: { embed_live: "Interativa, da sua página", embed_open: "Abrir à parte" },
+    it: { embed_live: "Interattiva, dalla sua pagina", embed_open: "Aprila da sola" },
+    ru: { embed_live: "Интерактивная, со своей страницы", embed_open: "Открыть отдельно" },
+    hi: { embed_live: "इंटरैक्टिव, अपने पेज से", embed_open: "अलग से खोलें" },
+  };
+  for (const [code, words] of Object.entries(EMBEDS)) Object.assign(S[code], words);
   // find in the text (reader.js, ⌘F): its bar (English with the rest, above)
   const FIND = {
     zh: { find_ph: "在文中查找", find_n: "{i}/{n}", find_none: "没有找到", find_prev: "上一个（⇧Enter）", find_next: "下一个（Enter）", find_close: "关闭（Esc）" },

@@ -129,7 +129,7 @@ Open `http://localhost:3017`. The first time, [connect a model](#connect-a-model
 | Paste or drop | What TextFold reads |
 |---|---|
 | A paper's link or DOI: arXiv, PubMed Central, bioRxiv, medRxiv | its text as the site structures it (an arXiv paper without an HTML version is read from its PDF; another DOI needs an open full text in Europe PMC) |
-| Any other web page | its article, without the menus, the adverts, or the text it hides from its readers |
+| Any other web page | its article, without the menus, the adverts, or the text it hides from its readers; an interactive figure that is a page of its own (as many research blogs embed them) runs in its place, and a formula written for MathJax or KaTeX is drawn as written |
 | A page open in your browser | the page as you see it, signed in or subscribed, with what its scripts drew: click TextFold's button. [Works in your browser ↑](#works-in-your-browser) |
 | A Wikipedia article, a GitHub repository | the article; the README, with its pictures |
 | A PDF | the paper online when the PDF names one, with your file beside it; any other PDF, on your computer: read by TextFold itself, figures included, or more completely by the PDF engine (MinerU, about 3.4 GB, installed once from the landing), which a scanned PDF needs |

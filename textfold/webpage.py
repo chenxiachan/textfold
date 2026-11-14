@@ -264,6 +264,117 @@ def _clean(md, title):
     return "\n".join(lines).strip() + "\n"
 
 
+# ── formulas written for a script to draw, and figures that are pages of their own ──────────────────────────
+# A fetched page runs no script: a formula it writes in its text for MathJax or KaTeX to draw is still TeX there, and
+# trafilatura, reading it as words, escapes its _ and * for Markdown (\sigma\_i). An interactive figure is often a page
+# of its own in an <iframe> (al-folio's and Distill's blogs, a video), which a reading of words leaves out. Both are
+# held in their place as placeholders while trafilatura reads the page, then put back: the TeX as written, a display
+# formula a paragraph of its own; the figure as a link the reader draws as the page drew it (reader.js, embeds). A
+# browser's snapshot has its formulas drawn already, as MathML (_math_views).
+MATH = "TFMATH{}Q"
+INLINE = "TFTEX{}Q"
+EMBED = "TFEMBED{}Q"
+HELD = re.compile(r"(TFMATH\d+Q|TFTEX\d+Q|TFEMBED\d+Q)")
+TEX = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.S)
+# $...$ in a page's text is a formula only where the page says so, in the settings it gives MathJax or KaTeX (a "$" is
+# money as often): then by Pandoc's rule, no space inside either $, no digit after the closing one
+DOLLARS_SET = re.compile(r"""inlineMath\s*:\s*\[\s*\[\s*['"]\$['"]|left\s*:\s*['"]\$['"]\s*,\s*right\s*:\s*['"]\$['"]""")
+DOLLARS = re.compile(r"(?<![\\$])\$(?=[^\s$])([^$\n]+?)(?<=\S)\$(?![\d$])")
+NO_TEX = {"script", "style", "pre", "code", "textarea", "kbd", "samp", "math"}
+LOCAL_HOST = re.compile(r"^(?:localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|::1)$", re.I)
+
+
+def _tex(root):
+    r"""Each display formula ($$...$$, \[...\]) in the page's text a placeholder, and each $...$ where the page's own
+    settings make $ a formula's: their TeX, by placeholder ((display, TeX))."""
+    found = []
+    dollars = any(DOLLARS_SET.search(x.text or "") for x in root.iter("script"))
+
+    def held(text):
+        def one(m):
+            found.append((True, re.sub(r"\s+", " ", m.group(1) or m.group(2)).strip()))
+            return f" {MATH.format(len(found) - 1)} "
+
+        def inline(m):
+            found.append((False, m.group(1)))
+            return INLINE.format(len(found) - 1)
+        if not text or "$" not in text and "\\[" not in text:
+            return text
+        text = TEX.sub(one, text)
+        return DOLLARS.sub(inline, text) if dollars else text
+    for el in list(root.iter()):
+        if not isinstance(el.tag, str):
+            continue
+        inside = el.tag in NO_TEX or any(a.tag in NO_TEX for a in el.iterancestors())
+        if not inside:
+            el.text = held(el.text)
+        parent = el.getparent()
+        if parent is not None and not (parent.tag in NO_TEX or any(a.tag in NO_TEX for a in parent.iterancestors())):
+            el.tail = held(el.tail)
+    return found
+
+
+def _height(el):
+    """The height the page gave an element, in pixels (its height attribute, or its style's), or None."""
+    m = re.search(r"(?:^|;)\s*height\s*:\s*(\d+(?:\.\d+)?)px", el.get("style") or "")
+    h = m.group(1) if m else el.get("height") or ""
+    return int(float(h)) if re.fullmatch(r"\d+(?:\.\d+)?", h.strip()) else None
+
+
+def _embeds(root):
+    """Each <iframe> of another page (its address is the web's, not this computer's) a placeholder, in its place: what
+    it is, by placeholder: its address, its name (title), the height the page gave it. One a few pixels high is a
+    tracker's, not a figure."""
+    found = []
+    for fr in list(root.iter("iframe")):
+        src = (fr.get("src") or fr.get("data-src") or "").strip()
+        try:
+            u = urllib.parse.urlsplit(src)
+        except ValueError:
+            continue
+        h = _height(fr)
+        if u.scheme not in ("http", "https") or not u.hostname or LOCAL_HOST.match(u.hostname) or (h is not None and h < 60):
+            continue
+        found.append({"src": src, "title": re.sub(r"\s+", " ", fr.get("title") or fr.get("aria-label") or "").strip(),
+                      "h": max(160, min(1400, h or 480))})
+        held = fr.makeelement("p", {})   # (a paragraph of its own: trafilatura drops a few words left between blocks)
+        held.text, held.tail = EMBED.format(len(found) - 1), fr.tail
+        fr.getparent().replace(fr, held)
+    return found
+
+
+def _embed_html(e):
+    name = e["title"] or urllib.parse.urlsplit(e["src"]).hostname
+    return (f'<figure><a class="pf-embed pf-h-{e["h"]}" href="{htmllib.escape(e["src"])}" title="{htmllib.escape(e["title"])}">'
+            f"{htmllib.escape(name, quote=False)}</a></figure>")
+
+
+def _put_back(md, tex, embeds):
+    """The placeholders in the Markdown as what they hold: a formula a paragraph of its own ($$ on lines of their own),
+    a figure an HTML block; in a list item, a table's row or a quote, where a paragraph would end it, in its line."""
+    def inline(m):
+        k = int(re.search(r"\d+", m.group(0)).group(0))
+        return f"$${tex[k][1]}$$" if m.group(0).startswith("TFMATH") else f"${tex[k][1]}$" if m.group(0).startswith("TFTEX") else _embed_html(embeds[k])
+    out = []
+    for ln in md.splitlines():
+        ln = re.sub(r"TFTEX\d+Q", inline, ln)   # (a formula in the line: there, as written)
+        if not HELD.search(ln):
+            out.append(ln)
+        elif re.match(r"\s*(?:\||[-*+]\s|\d+[.)]\s|>)", ln):
+            out.append(HELD.sub(inline, ln))
+        else:
+            for piece in HELD.split(ln):
+                k = re.search(r"\d+", piece).group(0) if HELD.fullmatch(piece) else None
+                if k is None:
+                    if piece.strip():
+                        out += ["", piece.strip(), ""]
+                elif piece.startswith("TFMATH"):
+                    out += ["", "$$", tex[int(k)][1], "$$", ""]
+                else:
+                    out += ["", _embed_html(embeds[int(k)]), ""]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
+
+
 def read(page, final):
     """A page's article as TextFold reads it with no recipe (adapt.py has the ones written for a site): its Markdown,
     its HTML, and what the page says of itself (title, site, authors, date, license)."""
@@ -275,12 +386,13 @@ def read(page, final):
     _hover_marks(tree)
     notes = _notes(tree)
     _hidden_out(tree)
+    tex, embeds = _tex(tree), _embeds(tree)
     md = trafilatura.extract(tree, url=final, output_format="markdown", include_images=True, include_links=True,
                              include_tables=True, include_formatting=True, favor_recall=True) or ""
-    if len(md.split()) < MIN_WORDS:
+    if len(HELD.sub("", md).split()) < MIN_WORDS:
         raise ValueError("web-notext")
     info = about(tree, final)
-    md = _clean(md, info["title"])
+    md = _put_back(_clean(md, info["title"]), tex, embeds)
     html, _ = markdown.to_html(md)
     return _md_noted(md, notes), _noted(html, notes), info
 

@@ -387,6 +387,13 @@ figure.fig:not([data-l="4"]):not([data-l="3"]) .fig-pdf { display: none; }
   padding: 8px; box-shadow: 0 24px 70px -20px rgba(0, 0, 0, .7); cursor: zoom-in; }
 .lightbox:has(.lb-cap) .lb-pic { max-height: 74vh; }
 .lightbox svg.lb-pic { width: min(94vw, 1200px); height: 76vh; }
+/* an interactive figure of a web page, in a frame of its own (reader.js, embeds): as wide as the column, the height
+   its page gave it; under it, where it comes from */
+figure.fig .embed { margin: 0 auto; }
+figure.fig .embed iframe { display: block; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+figure.fig .embed-bar { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; color: var(--muted); font: 12px/1.4 var(--sans); }
+figure.fig .embed-bar a { color: var(--muted); text-decoration: none; }
+figure.fig .embed-bar a:hover { color: var(--accent); }
 /* zoomed (reader.js, openLightbox): scaled and shifted from where it opened, dragged to see the rest; the caption
    steps aside so the picture can use the screen */
 /* (no will-change: a layer would be drawn at the size it opened at, and blur as it grows) */

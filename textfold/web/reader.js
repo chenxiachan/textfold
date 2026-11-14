@@ -610,11 +610,12 @@
         list = null;
         // a captioned figure with no picture in it is laid out as a table is (reader.css: fig-nopicture): words alone (a
         // table an engine gave as a list, #119; a box of text), or nothing (a teaser whose picture arXiv set apart)
-        const bare = b.cap && b.kind !== 'table' && !/<(img|svg|canvas|video)\b|pf-mermaid/i.test(b.html || '');
+        const bare = b.cap && b.kind !== 'table' && !/<(img|svg|canvas|video)\b|pf-mermaid|pf-embed/i.test(b.html || '');
         const f = h('figure', `fig fig-${b.kind}${bare ? ' fig-nopicture' : ''}`); f.dataset.l = level;
         if (b.id) f.id = b.id;
         if (!b.cap) { bareFigs.push(f); lvBlocks.push(f); }
         const fb = h('div', 'fbody', b.html); fb.dataset.id = `fb:${b.id}`;
+        embeds(fb);
         f.append(fb);
         if (b.pdf && D.app) f.append(pdfOffer(b.pdf === 'cut'));
         if (b.cap) {
@@ -1774,6 +1775,34 @@
   // the paragraphs and sections that have a translation in l (what the page need not be sent again)
   function translated(l) {
     return { units: Object.keys(U).filter((uid) => U[uid].tr && U[uid].tr[l]), chunks: D.chunks.filter((c) => c.tr && c.tr[l]).map((c) => c.id) };
+  }
+
+  // ── an interactive figure of a web page (webpage.py: the page's <iframe>, kept as a link in its place): drawn as
+  //    the page drew it, its own page in a frame of its own. Only a page of the web is framed, never one of this
+  //    computer; sandboxed, its scripts run as on its page (in its own origin, another site's) and reach neither this
+  //    page nor the library, and a link it opens goes to the browser. Under it, where it comes from ──
+  const framable = (url) => {
+    try {
+      const u = new URL(url, location.href);
+      return /^https?:$/.test(u.protocol) && u.origin !== location.origin && !/^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])$/i.test(u.hostname);
+    } catch { return false; }
+  };
+  function embeds(fb) {
+    for (const a of fb.querySelectorAll('a.pf-embed')) {
+      if (!framable(a.href)) continue;
+      const box = h('div', 'embed'), fr = document.createElement('iframe');
+      fr.src = a.href;
+      fr.title = a.title || a.textContent.trim();
+      fr.loading = 'lazy';
+      fr.referrerPolicy = 'no-referrer';
+      fr.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms');
+      fr.setAttribute('allow', 'fullscreen');
+      fr.style.height = `${Math.max(160, Math.min(1400, +((a.className.match(/\bpf-h-(\d+)\b/) || [])[1] || 480)))}px`;
+      const bar = h('div', 'embed-bar');
+      bar.innerHTML = `<span>${esc(T[ui].embed_live)}</span><a href="${esc(a.href)}" target="_blank" rel="noopener">${esc(T[ui].embed_open)} ↗</a>`;
+      box.append(fr, bar);
+      a.replaceWith(box);
+    }
   }
 
   function toggleUnit(uid) {
