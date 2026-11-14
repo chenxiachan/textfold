@@ -183,14 +183,16 @@ def cjk_heavy(toks):
     return total > 0 and cjk / total > 0.2
 
 
-def worded(doc, tk):
-    """A token that shows words: a word, or an atom with words of its own (a link's, a citation's, inline code's). A
-    link to a place on this same page (#…) is not: a list of such links is the page's contents or a list of its own
-    sentences to go to, its words the page's own, read where they are."""
+def worded(doc, tk, links=True):
+    """A token that shows words: a word, or an atom with words of its own (inline code's, a citation's; a link's, when
+    links). A link to a place on this same page (#…) is not: a list of such links is the page's contents or a list of
+    its own sentences to go to, its words the page's own, read where they are."""
     if "t" in tk:
         return True
     at = doc.atoms.get(tk.get("a"), {})
     if at.get("kind") == "ref":
+        if not links:
+            return False
         href = (re.search(r'\shref="([^"]*)"', at.get("html") or "") or [None, ""])[1]
         page = str(doc.meta.get("abs_url") or "").split("#")[0].rstrip("/")
         if href.startswith("#") or (page and "#" in href and href.split("#")[0].rstrip("/") == page):
@@ -198,13 +200,14 @@ def worded(doc, tk):
     return at.get("kind") in ("ref", "cite", "html") and bool(re.search(r"\w", at.get("text") or ""))
 
 
-def add_units(doc, el, role, uid=None, split=True, linked=False, **extra):
+def add_units(doc, el, role, uid=None, split=True, linked=None, **extra):
     """The text of el as one unit, or as several when the author wrote a page-long paragraph: a 28-sentence
-    introduction zoomed as a single unit keeps 3 sentences of 28 at Key and says nothing at Topic. linked: a unit
-    even when all its words are in links or code (a list's item: a reference list of titles, a list of functions)."""
+    introduction zoomed as a single unit keeps 3 sentences of 28 at Key and says nothing at Topic. linked, for a list's
+    item: a unit even when its words are all inline code (False), or in links too (True: an item of a list whose other
+    items have words of their own)."""
     toks = []
     flatten(el, doc, toks)
-    if not any(worded(doc, tk) if linked else "t" in tk for tk in toks):
+    if not any("t" in tk if linked is None else worded(doc, tk, linked) for tk in toks):
         return []
     sents = split_sentences(toks)
     parts = [(0, len(toks), sents)]
@@ -311,18 +314,28 @@ def items(el):
         yield "", dd, None
 
 
+def _beside_links(li):
+    """An item's words outside its links (a reference's authors beside its linked title)."""
+    return any(re.search(r"\w", s) for s in li.find_all(string=True) if s.find_parent("a") is None)
+
+
 def lst(el, doc, depth=0):
+    # an item whose words are all in links is read when its list has items with words of their own (a reference list,
+    # some entries a bare title): a list of links alone is a menu, a site's row of buttons, its previous and next
+    # articles; and a paragraph of links in an item with words of its own is a row of buttons (a reference's links to
+    # the databases that hold it)
+    linked = any(marker is not None and _beside_links(li) for marker, li, _ in items(el))
     for marker, li, tag in items(el):
         if marker is None:
             lst(li, doc, depth + 1)
             continue
-        first = True
+        first, titled = True, linked and not _beside_links(li)
         # an item's paragraphs may hold equations or a nested list between its text
         parts = [c for ch in li.find_all(recursive=False) if ch is not tag
                  for c in (ch.find_all(recursive=False) if "ltx_para" in ch.get("class", []) else [ch])]
         for ch in parts:
             if ch.name == "p" and "ltx_p" in ch.get("class", []) and not blockish(ch):
-                ids = add_units(doc, ch, "item", linked=True, list=el.get("id") or "list", depth=depth, marker=marker if first else "")
+                ids = add_units(doc, ch, "item", linked=titled, list=el.get("id") or "list", depth=depth, marker=marker if first else "")
                 for uid in ids:
                     doc.add({"k": "u", "u": uid})
                     first = False

@@ -74,6 +74,7 @@ def normalize(html, resolve_img=None, sizes=False):
             el.name = "span"
         elif not _ours(el):
             el.unwrap()   # a quotation's paragraphs are read like any other; containers carry nothing of their own
+    _lift(soup, root)
     _lists(soup, root)
     blocks = _flow(soup, root)
     art = soup.new_tag("article", attrs={"class": "ltx_document"})
@@ -81,6 +82,39 @@ def normalize(html, resolve_img=None, sizes=False):
     for el in art.find_all(True):
         _keep_classes(el)
     return str(art)
+
+
+LIFTED = sorted(BLOCK)
+
+
+def _lift(soup, root):
+    """A paragraph or a span holding blocks: a reading view's <p><span><div><p>… (Readability's reading of a Zhihu
+    answer), any page whose scripts built such a tree, which an HTML parser never gives. A browser draws the blocks as
+    blocks, and they are read so. A span around them goes: its own words run on with what follows, as they are drawn.
+    A paragraph around them is split at them, its own words paragraphs of their own between them (_split_p, for
+    blocks anywhere inside it). Kept whole, it was one paragraph holding blocks, shown as it is and folded as none."""
+    for el in [t for t in root.descendants if t.name in ("p", "span")]:
+        if el.parent is None or _ours(el) or el.find(LIFTED) is None:
+            continue
+        if el.name == "span":
+            el.unwrap()
+            continue
+        for sp in [t for t in el.find_all("span") if not _ours(t) and t.find(LIFTED) is not None]:
+            sp.unwrap()
+        parts, cur = [], soup.new_tag("p")
+        for ch in list(el.contents):
+            if isinstance(ch, Tag) and ch.name in BLOCK:
+                if cur.get_text("").strip() or cur.find(True):
+                    parts.append(cur)
+                parts.append(ch.extract())
+                cur = soup.new_tag("p")
+            else:
+                cur.append(ch.extract())
+        if cur.get_text("").strip() or cur.find(True):
+            parts.append(cur)
+        for part in parts:
+            el.insert_before(part)
+        el.decompose()
 
 
 def _ours(el):
@@ -502,7 +536,7 @@ def _images(soup, root, resolve_img):
             cap.replace_with(_caption(soup, p))
 
 
-BLOCK = ["p", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "table", "div", "figure"]
+IN_CELL = ["p", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "table", "div", "figure"]   # (a layout cell's blocks)
 
 
 def _unfold_tables(soup, root):
@@ -527,7 +561,7 @@ def _unfold_tables(soup, root):
             for c in (c for r in cells for c in r):
                 if not c.get_text(strip=True) and c.find("img") is None:
                     continue
-                if c.find(BLOCK, recursive=False) is not None:
+                if c.find(IN_CELL, recursive=False) is not None:
                     out.extend(list(c.contents))
                 else:
                     p = soup.new_tag("p")

@@ -71,16 +71,31 @@ class Lists(unittest.TestCase):
         self.assertEqual(got, [("One", 0), ("Under", 1), ("Under", 2), ("Two", 0)])
         self.assertEqual([b["k"] for b in doc["blocks"]].count("u"), 4)
 
-    def test_an_item_all_links_is_read_and_a_formula_alone_is_shown(self):
+    def test_an_item_all_links_is_read_in_a_list_with_words_and_a_formula_alone_is_shown(self):
         doc = self.doc('<ul><li><p class="ltx_p"><a href="https://example.org/a">Compression for AGI</a></p></li>'
+                       '<li><p class="ltx_p"><a href="https://example.org/c">A title</a> @someone</p></li>'
                        f'<li><p class="ltx_p">{math("x^2")}</p></li></ul>'
                        '<p class="ltx_p"><a href="https://example.org/b">A link alone, outside a list</a></p>')
-        unit, = doc["units"].values()
-        self.assertEqual(unit["role"], "item")
-        self.assertEqual(doc["atoms"][unit["toks"][0]["a"]]["text"], "Compression for AGI")
+        first, second = doc["units"].values()
+        self.assertEqual((first["role"], doc["atoms"][first["toks"][0]["a"]]["text"]), ("item", "Compression for AGI"))
         raws = [b["html"] for b in doc["blocks"] if b["k"] == "raw"]
         self.assertEqual(len(raws), 2)   # (the formula alone, in its list; the link alone outside one, as before)
         self.assertIn("x^2", raws[0])
+
+    def test_a_list_of_links_alone_is_not_read(self):
+        """A menu, a site's row of buttons, its previous and next articles: as before."""
+        doc = self.doc('<ul><li><p class="ltx_p"><a href="https://example.org/prev">Previous article in this issue</a></p></li>'
+                       '<li><p class="ltx_p"><a href="https://example.org/next">Next article in this issue</a></p></li></ul>')
+        self.assertEqual(doc["units"], {})
+        doc = self.doc('<ol><li><p class="ltx_p">Gauge, A. Spring floods. Rev. Rivers 80, 1275 (2008).</p>'
+                       '<p class="ltx_p"><a href="https://example.org/ads">ADS</a> <a href="https://example.org/gs">Google Scholar</a></p></li>'
+                       '<li><p class="ltx_p"><a href="https://example.org/t">A bare title</a></p></li></ol>')
+        got = [doc["atoms"][u["toks"][0]["a"]]["text"] if "a" in u["toks"][0] else u["toks"][0]["t"] for u in doc["units"].values()]
+        self.assertEqual(got, ["Gauge", "A bare title"])   # (the reference's row of buttons is not; its bare title is)
+
+    def test_a_list_of_code_is_read(self):
+        doc = self.doc('<ul><li><p class="ltx_p"><code>drain3==0.9.11</code></p></li><li><p class="ltx_p"><code>numpy==2.4.5</code></p></li></ul>')
+        self.assertEqual(len(doc["units"]), 2)
 
     def test_a_list_of_places_on_the_page_is_not_read_again(self):
         """A page's contents, or a list of its sentences to go to: its words are the page's own, read where they are."""
