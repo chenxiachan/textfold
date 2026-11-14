@@ -1,12 +1,10 @@
-"""The reader's corrections of a translation, made where it is read (the app's Edit text, in a translation): a sentence
-of it rewritten (rewrite), or a term written otherwise wherever it occurs (rename), a name the translation got wrong
-above all. The translation is put right in place, its paragraph's levels made again of its sentences as the reply's
-were (translate.reword); no model is asked.
+"""The reader's corrections of a translation, made where it is read (the app's Edit translation): a sentence of it
+rewritten, under the sentence of the text it translates (rewrite). The translation is put right in place, its
+paragraph's levels made again of its sentences as the reply's were (translate.reword); no model is asked.
 
 They are the reader's own, and kept with the notes (notes.json: corrections), not in the translation, which is made
-again when the text is edited or the language generated again: laid over what comes back then (apply), a rewritten
-sentence while the sentence of the text it translates is still the same, a term always. The notes made in the
-translation stay on their words (_follow).
+again when the text is edited or the language generated again: laid over what comes back then (apply), each while the
+sentence of the text it translates is still the same. The notes made in the translation stay on their words (_follow).
 """
 import re
 import threading
@@ -60,11 +58,10 @@ def lines_of(pid, lang, uid, sents=()):
     return {"unit": uid, "sents": ks, "source": [_source(doc, uid, k) for k in ks], "lines": out, "marks": marks}
 
 
-def _saved(pid, doc, lang, tr, before, terms=()):
-    """The translation written as corrected, and the notes made in it moved with their words (terms: a term just
-    written otherwise, in their quotes too)."""
+def _saved(pid, doc, lang, tr, before):
+    """The translation written as corrected, and the notes made in it moved with their words."""
     store.save_tr(doc, lang, tr["base"], tr.get("model", ""))
-    notes.correct(pid, lambda data: _follow(data, doc, lang, before, terms))
+    notes.correct(pid, lambda data: _follow(data, doc, lang, before))
 
 
 def rewrite(pid, lang, uid, lines):
@@ -90,7 +87,7 @@ def rewrite(pid, lang, uid, lines):
                 got[k] = text
         if not got:
             return {"changed": 0}
-        made, _ = translate.reword(doc, lang, uid, sentences=got)
+        made = translate.reword(doc, lang, uid, got)
         if not made:
             raise ValueError("empty")
         before = _snapshot(doc, lang)
@@ -100,31 +97,14 @@ def rewrite(pid, lang, uid, lines):
         return {"changed": len(got)}
 
 
-def rename(pid, lang, old, new):
-    """A term of the translation (old) written as new wherever it occurs, and kept so (the translation made again
-    later is written so too). How many places; ValueError("not-found") when it is nowhere."""
-    old, new = re.sub(r"\s+", " ", old or "").strip(), re.sub(r"\s+", " ", new or "").strip()
-    if not old or not new or "⟦" in old + new:
-        raise ValueError("empty")
-    with _LOCK:
-        doc, tr = _doc(pid, lang)
-        before = _snapshot(doc, lang)
-        _, n = translate.correct(doc, lang, [(old, new)])
-        if not n:
-            raise ValueError("not-found")
-        _saved(pid, doc, lang, tr, before, [(old, new)])
-        notes.correct(pid, lambda data: _keep_term(data, lang, old, new))
-        return {"places": n}
-
-
 def kept(pid, lang):
-    """The corrections kept for lang: {"lines": [...], "terms": [[old, new], ...]}."""
+    """The corrections kept for lang: {"lines": [{unit, k, source, text}, ...]}."""
     return ((notes.read(pid).get("corrections") or {}).get(lang)) or {}
 
 
 def apply(pid, doc, lang):
     """A translation made again (pipeline.generate), put right as the reader put it before: each sentence rewritten
-    whose sentence of the text is still the same, then each term. (Before it is saved: no note has moved yet.)"""
+    whose sentence of the text is still the same. (Before it is saved: no note has moved yet.)"""
     c = kept(pid, lang)
     by_unit = {}
     for x in c.get("lines") or []:
@@ -133,10 +113,9 @@ def apply(pid, doc, lang):
         if u and lang in u.get("tr", {}) and isinstance(k, int) and k < len(u["sents"]) and _source(doc, x["unit"], k) == x.get("source"):
             by_unit.setdefault(x["unit"], {})[k] = x["text"]
     for uid, got in by_unit.items():
-        made, _ = translate.reword(doc, lang, uid, sentences=got)
+        made = translate.reword(doc, lang, uid, got)
         if made:
             doc["units"][uid]["tr"][lang] = made
-    translate.correct(doc, lang, [tuple(t) for t in c.get("terms") or []])
 
 
 # ── kept with the notes ──────────────────────────────────────────────────────────────────────────────────────────
@@ -146,27 +125,9 @@ def _keep_lines(data, lang, got):
     mine["lines"] = lines + [{"unit": uid, "k": k, "source": src, "text": text} for uid, k, src, text in got]
 
 
-def _keep_term(data, lang, old, new):
-    """A term kept: a term written before as old is written new now (a chain stays one step: a → b, then b → c is a →
-    c), and one put back as it first was is no correction."""
-    mine = data.setdefault("corrections", {}).setdefault(lang, {})
-    terms, first = [], old
-    for a, b in mine.get("terms") or []:
-        if b == old:
-            first = a
-        elif a != old:
-            terms.append([a, b])
-    if first != new:
-        terms.append([first, new])
-    mine["terms"] = terms
-    for x in mine.get("lines") or []:   # (a sentence rewritten before has the term too)
-        x["text"], _ = translate._subs(x["text"], [(old, new)], lang)
-
-
 # ── the notes made in the translation, on their words again ─────────────────────────────────────────────────────
 def _snapshot(doc, lang):
-    return {"units": {uid: u["tr"][lang] for uid, u in doc["units"].items() if lang in u.get("tr", {})},
-            "chunks": {c["id"]: dict(c["tr"][lang]) for c in doc["chunks"] if lang in c.get("tr", {})}}   # (put right in place)
+    return {"units": {uid: u["tr"][lang] for uid, u in doc["units"].items() if lang in u.get("tr", {})}}
 
 
 def _found(toks, atoms, exact, near):
@@ -190,21 +151,20 @@ def _start(toks, atoms, tokens):
     return spans[tokens[0]][0] if tokens and tokens[0] < len(spans) else 0
 
 
-def _follow(data, doc, lang, before, terms=()):
-    """Each note made in lang on a paragraph (or a section's line) whose translation changed, on its words again: where
-    they are now (the term just written otherwise written so in them too), else on the sentences it was on."""
+def _follow(data, doc, lang, before):
+    """Each note made in lang on a paragraph whose translation changed, on its words again: where they are now, else on
+    the sentences it was on."""
     A = doc["atoms"]
     for n in data.get("notes", []):
         a = n.get("anchor") or {}
         if a.get("lang") != lang:
             continue
         exact = (a.get("quote") or {}).get("exact") or ""
-        now_exact = translate._subs(exact, terms, lang)[0] if terms else exact
         if a.get("unit") in before["units"]:
             old, z = before["units"][a["unit"]], doc["units"][a["unit"]]["tr"][lang]
             if old == z or not a.get("tokens"):
                 continue
-            got = _found(z["toks"], A, now_exact, _start(old["toks"], A, a["tokens"]))
+            got = _found(z["toks"], A, exact, _start(old["toks"], A, a["tokens"]))
             if got is None:   # its words rewritten: the sentences it was on, which stay one to one
                 ks = [k for k in a.get("sents") or [] if k < len(z["sents"])] or [0]
                 got = [z["sents"][min(ks)][0], z["sents"][max(ks)][1] - 1]
@@ -215,18 +175,9 @@ def _follow(data, doc, lang, before, terms=()):
                           "prefix": notes._quoted(z["toks"], A, max(0, t0 - 12), t0 - 1, after=True)[-40:],
                           "suffix": notes._quoted(z["toks"], A, t1 + 1, min(len(z["toks"]) - 1, t1 + 12), before=True)[:40]}
             if a.get("shown"):   # a line of its levels it was made on (Key, Takeaway): its words there, else the passage
-                shown = translate._subs(a["shown"].get("exact") or "", terms, lang)[0] if terms else a["shown"].get("exact")
-                w = _found(z["lad"]["brief"], A, shown, 0)
+                w = _found(z["lad"]["brief"], A, a["shown"].get("exact") or "", 0)
                 if w:
                     a["shown"] = {"words": w, "exact": notes._quoted(z["lad"]["brief"], A, w[0], w[1])}
                 else:
                     a.pop("shown")
-        elif a.get("unit") is None and a.get("on") == "summary" and a.get("section") in before["chunks"] and a.get("tokens"):
-            c = next((c for c in doc["chunks"] if c["id"] == a["section"]), None)
-            lad = c and (c["tr"][lang].get("lad") or {})
-            if lad and lad.get("take") and before["chunks"][a["section"]] != c["tr"][lang]:
-                got = _found(lad["take"], A, now_exact, 0)
-                a["tokens"] = got
-                if got:
-                    a["quote"] = {**a["quote"], "exact": notes._quoted(lad["take"], A, got[0], got[1])}
     return data

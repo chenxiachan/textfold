@@ -1,8 +1,8 @@
-"""A translation put right where it is read (the app's Edit text, in a translation): a sentence of it rewritten, or a
-term (a name the translation got wrong) written otherwise wherever it occurs. Before, Edit text opened the text's own
-words at the top, whatever was selected in the translation. Now the translation itself is corrected, its levels made
-again of its sentences, the notes made in it on their words; the corrections are kept and laid over the translation
-when it is made again. A model that stands in for one, a data folder of its own; no network.
+"""A translation put right where it is read (the app's Edit translation): a sentence of it rewritten, under the
+sentence of the text it translates. Before, Edit text opened the text's own words at the top, whatever was selected in
+the translation. Now the translation itself is corrected, its levels made again of its sentences, the notes made in it
+on their words; the corrections are kept and laid over the translation when it is made again, while the sentence they
+translate is still the same. A model that stands in for one, a data folder of its own; no network.
 
 Run from the repo root:
     python3 -m unittest discover tests
@@ -27,8 +27,7 @@ CFG = {"kind": "api", "id": "fake/translator", "effort": "none"}
 
 
 class Model:
-    """Answers the translation prompts in Chinese (or German: lang), the term 折叠 (Faltung) in every line, each
-    marker copied where it was."""
+    """Answers the translation prompts in Chinese (or German: lang), each marker copied where it was."""
     def __init__(self, lang="zh"):
         self.lang, self.prompts = lang, []
 
@@ -46,7 +45,7 @@ class Model:
             marks = [" ".join(re.findall(r"⟦[^⟧]*⟧", s)) for s in sents]
             out["units"].append({
                 "id": f"U{n}",
-                "sentences": [(f"Die Faltung {m} hilft dem Faltungsnetz {k}." if de else f"折叠句{k}：{m}读者。") for k, m in enumerate(marks)],
+                "sentences": [(f"Der Satz {k} {m} hilft den Lesern." if de else f"折叠句{k}：{m}读者。") for k, m in enumerate(marks)],
                 "takeaway": "Faltung hilft Lesern" if de else "折叠帮助读者", "reason": "", "topic": "Faltung" if de else "折叠"})
         return {"out": out, "cost": 0}, False
 
@@ -81,38 +80,6 @@ class Corrections(unittest.TestCase):
             for uid, z in self.units(doc, lang):
                 self.assertEqual(translate.assemble(doc["units"][uid], translate.said(z), doc["atoms"], lang, self.fail), z)
 
-    def test_a_term_is_written_otherwise_wherever_it_occurs(self):
-        self.translated()
-        self.assertEqual(corrections.rename(self.pid, "zh", "折叠", "折页"), {"places": 12})
-        doc = self.stored()
-        for uid, z in self.units(doc):
-            words = translate.line(z["toks"]) + translate.line(z["lad"]["brief"]) + translate.line(z["lad"]["topic"])
-            self.assertNotIn("折叠", words)
-            self.assertIn("折页", words)
-        c = doc["chunks"][-1]["tr"]["zh"]
-        self.assertEqual(c["title"], "折页引言")
-        self.assertIn("折页", translate.line(c["lad"]["take"]))
-        self.assertEqual(doc["meta"]["titles"]["zh"], "关于折页的笔记")
-        first = self.units(doc)[0][1]
-        self.assertIn({"a": "a0"}, first["toks"])   # (the formula's marker is still the formula)
-        self.assertEqual(corrections.kept(self.pid, "zh")["terms"], [["折叠", "折页"]])
-
-    def test_a_longer_term_is_not_written_twice(self):
-        self.translated()
-        corrections.rename(self.pid, "zh", "读者", "读者群")
-        with self.assertRaises(ValueError):   # (nothing left to change)
-            corrections.rename(self.pid, "zh", "读者", "读者群")
-        doc = self.stored()
-        corrections.apply(self.pid, doc, "zh")   # (laid over again: as it was)
-        self.assertNotIn("读者群群", "".join(translate.line(z["toks"]) for _, z in self.units(doc)))
-
-    def test_in_a_spaced_language_a_term_is_a_word_of_its_own(self):
-        self.translated("de")
-        corrections.rename(self.pid, "de", "Faltung", "Knickung")
-        text = " ".join(translate.line(z["toks"]) for _, z in self.units(self.stored("de"), "de"))
-        self.assertIn("Die Knickung", text)
-        self.assertIn("Faltungsnetz", text)   # (a longer word with the term in it is another word)
-
     def test_a_sentence_is_rewritten_its_markers_kept(self):
         doc = self.translated()
         uid = next(uid for uid, z in self.units(doc) if {"a": "a0"} in z["toks"])
@@ -133,15 +100,13 @@ class Corrections(unittest.TestCase):
         doc = self.translated()
         uid = self.units(doc)[1][0]
         corrections.rewrite(self.pid, "zh", uid, {"1": "每一层保留它下面那一层。"})
-        corrections.rename(self.pid, "zh", "折叠", "折页")
         model = Model()
         with mock.patch.object(llm, "call", model):
             pipeline.generate(self.pid, "zh", CFG, force=True)
-        self.assertIn('"折页", not "折叠"', model.prompts[0])   # (every call made anew: the model is told)
-        doc = self.stored()
-        said = translate.said(doc["units"][uid]["tr"]["zh"])["sentences"]
+        self.assertTrue(model.prompts)   # (made again by the model)
+        said = translate.said(self.stored()["units"][uid]["tr"]["zh"])["sentences"]
         self.assertEqual(said[1], "每一层保留它下面那一层。")
-        self.assertNotIn("折叠", "".join(translate.line(z["toks"]) for _, z in self.units(doc)))
+        self.assertEqual(said[0], "折叠句0：读者。")   # (the rest as the model wrote it)
 
     def test_a_rewritten_sentence_goes_when_the_text_it_translates_changed(self):
         doc = self.translated()
@@ -168,16 +133,16 @@ class Corrections(unittest.TestCase):
         self.assertEqual(notes._quoted(z["toks"], {}, *a["tokens"]), "读者")
         self.assertGreater(a["tokens"][0], t0)
         self.assertEqual(a["sents"], [1])
-        corrections.rename(self.pid, "zh", "读者", "读者们")
+        corrections.rewrite(self.pid, "zh", uid, {"1": "这一句改写了，没有那个词。"})   # (its words gone: the sentence it was on)
         a = notes.read(self.pid)["notes"][0]["anchor"]
         z = self.stored()["units"][uid]["tr"]["zh"]
-        self.assertEqual(a["quote"]["exact"], "读者们")
-        self.assertEqual(notes._quoted(z["toks"], {}, *a["tokens"]), "读者们")
+        self.assertEqual(a["sents"], [1])
+        self.assertEqual(notes._quoted(z["toks"], {}, *a["tokens"]), "这一句改写了，没有那个词。")
 
     def test_the_texts_own_language_has_no_translation_to_correct(self):
         self.translated()
         with self.assertRaisesRegex(ValueError, "no-translation"):
-            corrections.rename(self.pid, "en", "folding", "creasing")
+            corrections.rewrite(self.pid, "en", next(iter(store.parsed(self.pid)["units"])), {"0": "Readers skim."})
 
 
 if __name__ == "__main__":

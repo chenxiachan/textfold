@@ -2327,7 +2327,7 @@
       `<button type="button" data-act="note">${esc(t.n_note)}</button>` +
       `<button type="button" data-act="ask">${esc(t.n_ask)}</button>` +
       // the author's words, which the reader can put right in any document (app.js, editText); in a translation, the
-      // translation itself (editTranslation): its sentences, or a term wherever it occurs (a section's line: the term)
+      // translation itself (editTranslation): the sentences selected
       (fixable(anchors[0]) ? `<button type="button" data-act="edit">${esc(anchors[0].lang !== BASE ? t.tr_fix : t.ed_fix)}</button>` : '');
     selbar.hidden = false;
     const r = getSelection().getRangeAt(0).getBoundingClientRect(), w = selbar.offsetWidth;
@@ -2339,7 +2339,7 @@
     const app = window.DRApp;
     if (!app || !app.editText) return false;
     if (a.lang === BASE) return !!a.tokens;
-    return !!app.editTranslation && (a.unit ? !!(a.tokens || a.shown) : a.on === 'summary' && !!a.tokens);
+    return !!app.editTranslation && !!a.unit && !!a.tokens && !!(a.sents || []).length;
   }
   // a dot for each shade a highlight may have (data-s), in the colour of the level it is made at; in a note opened, its
   // own is on; over a selection, the one Highlight takes is ringed

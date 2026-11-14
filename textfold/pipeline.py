@@ -110,7 +110,6 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
         if force or tr is None or tr.get("base") != en["version"] or tr.get("partial"):
             check()
             again = force and not (replaced and tr is None)
-            terms = [tuple(t) for t in corrections.kept(pid, lang).get("terms") or []]
             # a language translated for the first time is shown as it is made, section by section (shown: how many
             # are, for the reader's page); one made again stays as it was until the new one is whole
             sink = None
@@ -118,9 +117,9 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
                 if tr is not None:
                     store.apply_tr(doc, lang, tr)   # (what a translation stopped before had: in, while the rest comes)
                 sink = _shown(pid, doc, lang, en["version"], model, shown)
-            translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop, terms=terms, sink=sink)
+            translate.build(doc, lang, task(cfg, "translate"), cache, jobs=jobs, log=log, progress=lambda a, b: progress("translate", a, b), force=again, stop=stop, sink=sink)
             check()
-            corrections.apply(pid, doc, lang)   # (the reader's own: a sentence rewritten, a term written otherwise)
+            corrections.apply(pid, doc, lang)   # (the reader's own: the sentences they rewrote)
             store.save_tr(doc, lang, en["version"], model)
         elif cfg is not None:
             store.apply_tr(doc, lang, tr)

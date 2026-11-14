@@ -23,9 +23,8 @@
                               with the text's own beside them (corrections.lines_of)
   POST /api/translation/parts {id, lang, units, chunks}: a translation as it is made (partial), its paragraphs and
                               sections but those named (the page has them): {units, chunks, title, partial}
-  POST /api/translation       {id, lang, unit, lines: {k: line}}: those sentences as the reader wrote them; POST
-                              /api/translation/term {id, lang, old, new}: a term written otherwise wherever it occurs. Both
-                              kept with the notes and laid over the translation when it is made again (corrections.py)
+  POST /api/translation       {id, lang, unit, lines: {k: line}}: those sentences as the reader wrote them, kept with the
+                              notes and laid over the translation when it is made again (corrections.py)
   POST /api/places            {id, spans: [[from, to], ...]}: where each place of that text is read on the page
                               ({places: [{words: [{unit, tokens}], at: {unit, token, after}} | {section} | null]}:
                               local.places), the edit history's changes marked on it
@@ -933,17 +932,14 @@ def make_handler(jobs):
                     return self.json({"units": {k: v for k, v in tr["units"].items() if k not in have_u},
                                       "chunks": {k: v for k, v in tr["chunks"].items() if k not in have_c},
                                       "title": tr.get("title"), "partial": bool(tr.get("partial")), "version": tr.get("version")})
-                if u.path in ("/api/translation", "/api/translation/term"):   # a translation put right where it is read
+                if u.path == "/api/translation":   # a translation put right where it is read
                     pid, lang = str(body.get("id") or ""), str(body.get("lang") or "")
                     if not store.valid_id(pid) or not (store.pdir(pid) / "meta.json").exists():
                         return self.json({"error": "no such paper"}, 404)
                     if any(j["pid"] == pid and j["status"] in ("queued", "running") for j in jobs.list()):
                         return self.json({"error": "busy"}, 409)
                     try:
-                        if u.path == "/api/translation":
-                            got = corrections.rewrite(pid, lang, str(body.get("unit") or ""), body.get("lines") or {})
-                        else:
-                            got = corrections.rename(pid, lang, str(body.get("old") or ""), str(body.get("new") or ""))
+                        got = corrections.rewrite(pid, lang, str(body.get("unit") or ""), body.get("lines") or {})
                     except ValueError as e:
                         return self.json({"error": str(e)}, 400)
                     PAGES.pop(pid, None)

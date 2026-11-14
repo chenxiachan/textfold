@@ -534,14 +534,9 @@ dialog.settings.trfix { width: min(760px, calc(100vw - 32px)); }
 .tr-src { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .tr-line { display: block; width: 100%; box-sizing: border-box; resize: vertical; padding: 9px 12px; font: 15px/1.6 var(--serif, inherit); color: var(--ink);
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; outline: none; }
-.tr-line:focus, .tr-new:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.tr-line:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .tr-marks { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; }
 .tr-marks code { font: 12px var(--mono); color: var(--ink); }
-.tr-term { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.tr-term label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 320px; }
-.tr-term .tr-old { font-weight: 600; }
-.tr-new { flex: 1 1 140px; min-width: 120px; padding: 6px 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; outline: none; }
-.tr-term .st-note { flex-basis: 100%; margin: 0; }
 .trfix .tr-said { margin-right: auto; color: var(--muted); font-size: 13px; }
 /* what is new after an update (app.js, showNews): each change a title and a few lines; the release notes and a star */
 dialog.settings.news { width: min(560px, calc(100vw - 32px)); }
