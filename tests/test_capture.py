@@ -114,6 +114,10 @@ VIEW = ('<h2>Published by: Example Press</h2><h2>Rivers</h2><div><a href="/pdf">
         f'<p>Paragraph 2. {WORDS}</p><math display="block" data-latex="x = 1"><mi>x</mi><mo>=</mo><mn>1</mn></math>'
         '<div id="footnotes"><ol><li id="fn:1"><p>Since 2019. <a href="#fnref:1" class="footnote-backref">↩</a></p></li></ol></div>')
 READ = {"defuddle": {"html": VIEW, "title": "Rivers", "words": 160}, "readability": {"html": f"<p>{WORDS}</p>" * 4, "words": 140}}
+# the publisher's page VIEW is Defuddle's reading of, as the browser showed it: the site's header and buttons around it
+PRESS = ('<!doctype html><html><head><title>Rivers | Example Press</title></head><body><header><nav><a href="/">Journals</a> '
+         '<a href="/books">Books</a></nav></header><main><article>' + VIEW.replace('<div id="footnotes">', '<aside id="footnotes">')
+         .replace('</li></ol></div>', '</li></ol></aside>') + '</article></main><footer>About Example Press</footer></body></html>')
 
 
 class ReadingView(unittest.TestCase):
@@ -181,7 +185,7 @@ class ReadingView(unittest.TestCase):
         self.assertIn('<math display="block"><mi>z</mi></math>', html)
 
     def test_kept_from_the_reading_view(self):
-        r = capture.receive(dict(SNAP, read=READ))
+        r = capture.receive(dict(SNAP, html=PRESS, read=READ))
         d = store.pdir(r["paper"])
         meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
         self.assertEqual((meta["reader"], meta["title"]), ("defuddle", "Rivers"))
@@ -191,6 +195,17 @@ class ReadingView(unittest.TestCase):
         self.assertIn("ltx_role_footnote", html)
         self.assertIn('src="img/01-fig1.png"', html)
         self.assertIn("ltx_title", html)
+
+    def test_the_reading_that_differs_least_from_the_page_is_kept(self):
+        """A reading view that left out part of the article (Defuddle, a Wikipedia article's sections): the other, or
+        TextFold's own of the snapshot, is kept, whatever their words (webpage.view_of would take Defuddle's)."""
+        half = {"html": f"<h1>Rivers</h1><p>Paragraph 1. {WORDS}</p><p>Paragraph 2. {WORDS}</p>", "title": "Rivers", "words": 90}
+        whole = {"html": "".join(f"<p>Paragraph {k}. {WORDS}</p>" for k in range(1, 5)) + "<p>Read hourly.</p>", "words": 120}
+        self.assertEqual(webpage.view_of({"defuddle": half, "readability": whole})[0], "defuddle")
+        r = capture.receive(dict(SNAP, read={"defuddle": half, "readability": whole}))
+        meta = json.loads((store.pdir(r["paper"]) / "meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["reader"], "readability")
+        self.assertIn("Paragraph 4.", (store.pdir(r["paper"]) / "source.html").read_text(encoding="utf-8"))
 
     def test_neither_reading_has_the_words(self):
         r = capture.receive(dict(SNAP, read={"defuddle": {"html": "<p>Subscribe.</p>", "words": 1}}))

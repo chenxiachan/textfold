@@ -51,6 +51,16 @@ place. The check needs no recipe and is the same for every site:
 - **Text that does not fold**: how much of the reading's running text is in raw blocks (not code, not a table), as when
   a reading view wraps the article's paragraphs in one.
 
+**The reading kept is the one closest to the page.** A page sent from the browser comes with two readings, Defuddle's
+and Readability's, and TextFold reads the snapshot itself too. All three are checked against the same article (found
+from the words of all of them, so that one that took a part of the article is not measured against that part alone),
+and the one that differs least is kept (`adapt.choose`, `adapt.cost`, `capture.reading_of`): blocks it lacks, formulas
+not in their places, formulas and pictures it lacks, words the page does not show, text that does not fold; a short
+label a quarter, a block from outside the article half. Defuddle first when they are as close. Before, Defuddle's was
+kept unless Readability's had half as many words again: of the 18 pages sent from the browser in the library on
+2026-11-14, six are now read otherwise (Defuddle left out 47 blocks of a Wikipedia article, Readability 2), and the sum
+of what the check says against them halved (677.7 to 312.9).
+
 Measured on the 157 pages of the OpenShelf set as fetched, and on 18 pages sent from the browser (2026-11-14): the
 first Zhihu article read had half of its words missing (126 blocks: Zhihu writes a nested list as `<ul><ul>`, which the
 reader skipped) and 19 one-symbol formulas taken for footnotes (the extension read a formula reading `n` as a note's

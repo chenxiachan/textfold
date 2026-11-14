@@ -539,8 +539,8 @@ def reading(doc):
             out.append(("paragraph", said(units[b["u"]]["toks"])))
         elif k == "fig":
             out.append(("figure", _html_words(b.get("html") or "")))
-            if b.get("cap") in units:
-                out.append(("caption", said(units[b["cap"]]["toks"])))
+            if b.get("cap") in units:   # (its label shown apart, before it: "Fig. 1")
+                out.append(("caption", _norm(f'{b.get("label") or ""} {said(units[b["cap"]]["toks"])}')))
         elif k in ("raw", "eq"):   # (a raw block of code or a table is "code": it is not meant to fold)
             html = b.get("html") or ""
             code = k == "raw" and bool(re.match(r"\s*<(pre|table|div[^>]*\bpf-(?:tex|grid|mermaid))", html))
@@ -585,49 +585,18 @@ def _area(blocks, found, root):
     return best
 
 
-def check(page, url, html, recipe=None, doc=None):
-    """The reading (html, normalized; or doc, as parse.parse gives it) against the page as its reader sees it, as the
-    reader shows it: words taken that the page does not show (there should be none); the page's blocks the reading
-    lacks, within its article (the recipe's, or the element the reading was taken from), grouped by where they are,
-    and the blocks whose words are there but not their formulas, all of them or in their places; the reading's
-    paragraphs taken from outside the article (a site's furniture, most often: a byline, a count of likes); the
-    formulas and pictures of each; and paragraphs a reader's browser could not find again by their first words. A
-    formula is compared by its place, not its TeX (a page draws it, the reading keeps its source)."""
-    from . import semantic
-    from .parse import parse
-    root, text = shown(page, url, recipe)
-    flat = text.replace(" ", "")   # (two blocks side by side on the page, a title and its authors, have no space between)
-    if doc is None:
-        doc = parse(semantic.normalize(html, sizes=True), {"id": "web-check"})
-    shown_blocks, told = reading(doc)
+def _states(blocks, url, shown_blocks, told):
+    """Each block of the page in a reading (what it shows, reading()): "there", "formulas" (its words there, not its
+    formulas), "contents" (links to places on the same page: neither the reading's nor missing from it), "missing".
+    And the reading's words, flat."""
     got = " ".join(t for _, t in shown_blocks)
-    not_seen, twice = [], []
-    flat_bare = flat.replace(FORMULA, "")   # (a formula the reading lost runs the words around it together: said apart)
-    for u in doc["units"].values():
-        for run in (r.replace("🖼", " ") for r in _runs(u["toks"])):   # (the words between its formulas and other atoms)
-            for piece in SENTENCE.split(_norm(run)):
-                if _long(piece, 5) and piece.replace(" ", "") not in flat_bare:
-                    not_seen.append(piece)
-    for kind, t in shown_blocks:
-        if kind != "paragraph":
-            continue
-        head = " ".join(t.replace("🖼", " ").split()[:10])
-        if len(t.split()) >= 6 and flat.count(head.replace(" ", "")) != 1:
-            twice.append(head)
-    hit = root.xpath('//*[@data-tf-article]') if recipe and recipe.get("article") else []
-    carded = 0
-    for el in root.xpath('.//*[@data-tf-drop] | .//*[@data-tf-figure]'):
-        if el.getparent() is not None and (not hit or webpage._within(el, hit[0])):
-            carded += len(_blocks(el)) if el.get("data-tf-figure") else 0
-            el.drop_tree()
     flat_got = got.replace(" ", "").replace("🖼", "") + "|" + "|".join(t.replace(" ", "") for t in told)
     # its words alone, a formula's place kept: a section's number, a footnote's left as a digit, a dash or quote set
     # otherwise, do not make a block missing; nor its formulas, when they are not there (bare)
     words = lambda x: re.sub(r"[^\w" + FORMULA + r"]+|[\d_]+", "", x)  # noqa: E731
     words_got = words(flat_got.replace("|", " | "))
     bare_got = words_got.replace(FORMULA, "")
-    blocks = _blocks(root)
-    state = []   # ("there" | "formulas" | "contents" | "missing") of each block of the page
+    state = []
     for el, t, _ in blocks:
         f = MARKS.sub("", t).replace(" ", "")
         w = words(f)
@@ -636,7 +605,7 @@ def check(page, url, html, recipe=None, doc=None):
             state.append("there")
             continue
         if _to_here(el, url):
-            state.append("contents")   # (neither the reading's nor missing from it)
+            state.append("contents")
             continue
         said = [words(MARKS.sub("", x)) for x in SENTENCE.split(t) if _long(x, 4) or len(x) >= 12]
         if len(said) > 1 and sum(x in words_got for x in said) >= 0.8 * len(said):
@@ -645,7 +614,41 @@ def check(page, url, html, recipe=None, doc=None):
             state.append("formulas")
         else:
             state.append("missing")
-    area = hit[0] if hit else _area(blocks, [s in ("there", "formulas") for s in state], root)
+    return state, flat_got
+
+
+def _page(page, url, recipe=None):
+    """The page as the check reads it: (its tree, its words flat, its blocks, the recipe's article or None, how many
+    blocks are in the figures the recipe shows as a link)."""
+    root, text = shown(page, url, recipe)
+    hit = root.xpath('//*[@data-tf-article]') if recipe and recipe.get("article") else []
+    carded = 0
+    for el in root.xpath('.//*[@data-tf-drop] | .//*[@data-tf-figure]'):
+        if el.getparent() is not None and (not hit or webpage._within(el, hit[0])):
+            carded += len(_blocks(el)) if el.get("data-tf-figure") else 0
+            el.drop_tree()
+    return root, text.replace(" ", ""), _blocks(root), (hit[0] if hit else None), carded
+
+
+def _said(page_parts, url, doc, read, area):
+    """One reading (doc; read: what reading() gave of it, and its states) against the page, within area."""
+    root, flat, blocks, hit, carded = page_parts
+    shown_blocks, told, state, flat_got = read
+    got = " ".join(t for _, t in shown_blocks)
+    not_seen, twice = [], []
+    flat_bare = flat.replace(FORMULA, "")   # (a formula the reading lost runs the words around it together: said apart)
+    for u in doc["units"].values():
+        for run in (_placed(r.replace("🖼", " ")) for r in _runs(u["toks"])):   # (the words between its formulas and other atoms)
+            for bit in run.split(FORMULA):   # (TeX in its words: a formula, in its place on the page)
+                for piece in SENTENCE.split(_norm(bit)):
+                    if _long(piece, 5) and piece.replace(" ", "") not in flat_bare:
+                        not_seen.append(piece)
+    for kind, t in shown_blocks:
+        if kind != "paragraph":
+            continue
+        head = " ".join(t.replace("🖼", " ").split()[:10])
+        if len(t.split()) >= 6 and flat.count(head.replace(" ", "")) != 1:
+            twice.append(head)
     missing, elsewhere, moved, short, in_order = {}, {}, [], [], []
     page_blocks = 0
     for (el, t, raw), s in zip(blocks, state):
@@ -669,7 +672,7 @@ def check(page, url, html, recipe=None, doc=None):
     group = lambda d, n: {k: (len(v), v[:3]) for k, v in sorted(d.items(), key=lambda kv: -len(kv[1]))[:n]}  # noqa: E731
     return {"words": len(got.split()), "paragraphs": len(doc["units"]),
             "notes": sum(1 for a in doc["atoms"].values() if a.get("kind") == "note"),
-            "article": "the recipe's" if hit else _sig(area),
+            "article": "the recipe's" if hit is not None else _sig(area),
             "not on the page": not_seen[:8], "not on the page (count)": len(not_seen),
             "missing": group(missing, 12), "missing (blocks)": sum(len(v) for v in missing.values()),
             "missing (in order)": in_order[:12],
@@ -681,6 +684,55 @@ def check(page, url, html, recipe=None, doc=None):
             "pictures": {"page": pictures, "reading": len(doc.get("images") or [])},
             "in figures shown as a link": carded, "not folding": round(unfolded, 2),
             "not found again by its words": len(twice), "not found again (e.g.)": twice[:3], "page blocks": page_blocks}
+
+
+def _checked(page, url, docs, recipe=None):
+    """Readings of one page (docs, parsed) checked against it, each within the same article: the recipe's, or the
+    element the readings' words are in, all of them together (a reading that took a part of the article is measured
+    against the whole of it, not against that part). [what check says], in the order of docs."""
+    parts = _page(page, url, recipe)
+    root, _, blocks, hit, _ = parts
+    reads = []
+    for doc in docs:
+        shown_blocks, told = reading(doc)
+        reads.append((shown_blocks, told, *_states(blocks, url, shown_blocks, told)))
+    area = hit if hit is not None else _area(blocks, [any(r[2][i] in ("there", "formulas") for r in reads) for i in range(len(blocks))], root)
+    return [_said(parts, url, doc, r, area) for doc, r in zip(docs, reads)]
+
+
+def check(page, url, html, recipe=None, doc=None):
+    """The reading (html, normalized; or doc, as parse.parse gives it) against the page as its reader sees it, as the
+    reader shows it: words taken that the page does not show (there should be none); the page's blocks the reading
+    lacks, within its article (the recipe's, or the element the reading was taken from), grouped by where they are,
+    and the blocks whose words are there but not their formulas, all of them or in their places; the reading's
+    paragraphs taken from outside the article (a site's furniture, most often: a byline, a count of likes); the
+    formulas and pictures of each; and paragraphs a reader's browser could not find again by their first words. A
+    formula is compared by its place, not its TeX (a page draws it, the reading keeps its source)."""
+    if doc is None:
+        from . import semantic
+        from .parse import parse
+        doc = parse(semantic.normalize(html, sizes=True), {"id": "web-check"})
+    return _checked(page, url, [doc], recipe)[0]
+
+
+def cost(c):
+    """How far a reading is from its page, by what check says of it: blocks of the article it lacks, those whose
+    formulas are not there, the article's formulas and pictures it lacks (a display formula is a block of none but it),
+    places where it has words the page does not show, the article's blocks its text that does not fold stands for; a
+    short label it lacks counts a quarter, a block it took from outside the article half (a byline is less than a
+    paragraph lost)."""
+    return (c["missing (blocks)"] + c["formulas not there"] + max(0, c["formulas"]["page"] - c["formulas"]["reading"])
+            + max(0, c["pictures"]["page"] - c["pictures"]["reading"])
+            + c["not on the page (count)"] + c["not folding"] * c["page blocks"]
+            + 0.25 * c["missing, short"] + 0.5 * c["from outside the article"])
+
+
+def choose(page, url, docs):
+    """Of the readings of a page ({name: doc}, in the order to take when they are as far from it), the one that differs
+    least from it, all checked against the same article: (its name, {name: what check says})."""
+    names = list(docs)
+    said = dict(zip(names, _checked(page, url, [docs[n] for n in names])))
+    return min(names, key=lambda n: (cost(said[n]), names.index(n))), said
 
 
 def report(c):

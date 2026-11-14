@@ -115,10 +115,44 @@ def hello():
     return {"ok": True, "textfold": __version__, "protocol": PROTOCOL, "running": bool(_server_url())}
 
 
+def reading_of(read, html, url):
+    """The reading of a page sent from the browser: of the reading views' (Defuddle's, Readability's, those with the
+    words to read) and TextFold's own of the snapshot, the one that differs least from the page (adapt.choose: blocks of
+    the article it lacks, formulas not in their places, pictures, words the page does not show), the views first when
+    they are as far from it. (how, its HTML, what the page says of itself, the view's own HTML or None, TextFold's own
+    Markdown or None). web-notext: none has the words to read."""
+    from . import adapt, semantic
+    from .parse import parse
+    got = {}
+    for name, view in webpage.views_of(read).items():
+        try:
+            got[name] = (*webpage.read_view(view, html, url), view["html"], None)
+        except ValueError:   # (web-notext: too few words once the site's bits are out)
+            pass
+    try:
+        md, own, info = webpage.read(html, url)
+        got["textfold"] = (own, info, None, md)
+    except ValueError:
+        pass
+    if not got:
+        raise ValueError("web-notext")
+    how = next(iter(got))
+    if len(got) > 1:
+        try:
+            docs = {k: parse(semantic.normalize(h, resolve_img=lambda src: src, sizes=True),
+                             {"id": "web-choose", "abs_url": url, "title": i.get("title"), "authors": i.get("authors") or [], "date": i.get("date")})
+                    for k, (h, i, _, _) in got.items()}
+            how, _ = adapt.choose(html, url, docs)
+        except Exception:   # (the check could not be made: the views by their words, as before)
+            how = webpage.view_of(read)[0] or "textfold"
+            how = how if how in got else next(iter(got))
+    return (how, *got[how])
+
+
 def receive(msg):
     """A snapshot the extension sent: checked, stored, its levels asked for when TextFold runs, and where to open it.
-    Its article is the one a reading view read in the browser (msg["read"], webpage.view_of), or else the one TextFold
-    reads in the snapshot itself. {"ok", "paper", "new", "open", "job"}. A hello is answered with hello()."""
+    Its article is the reading that differs least from the snapshot (reading_of): one a reading view read in the
+    browser (msg["read"]), or the one TextFold reads in the snapshot itself. {"ok", "paper", "new", "open", "job"}. A hello is answered with hello()."""
     if isinstance(msg, dict) and msg.get("format") == HELLO:
         return hello()
     if not isinstance(msg, dict) or msg.get("format") != FORMAT:
@@ -135,12 +169,7 @@ def receive(msg):
     d = store.pdir(pid)
     new = not (d / "meta.json").exists()
     if new:
-        how, view = webpage.view_of(msg.get("read") if isinstance(msg.get("read"), dict) else None)
-        if view:
-            read, info = webpage.read_view(view, html, url)
-        else:
-            how = "textfold"
-            md, read, info = webpage.read(html, url)   # (too few words: web-notext, said to the extension)
+        how, read, info, view, md = reading_of(msg.get("read") if isinstance(msg.get("read"), dict) else None, html, url)
         host = re.sub(r"^www\.", "", urllib.parse.urlparse(url).hostname or "")
         if info["title"] == host:   # (the page names itself nowhere TextFold reads: the tab's title)
             info["title"] = (msg.get("title") or "").strip()[:300] or host
@@ -154,7 +183,7 @@ def receive(msg):
         pre = local.prefetch(re.findall(r'<img[^>]*\ssrc="([^"]+)"', read))
         local.store_doc(pid, read, meta, "snapshot.html", html, lambda folder: local.Images(folder, None, pre=pre).resolve, sizes=True)
         if view:
-            (d / "article.html").write_text(view["html"], encoding="utf-8")   # (as the reading view gave it)
+            (d / "article.html").write_text(view, encoding="utf-8")   # (as the reading view gave it)
         else:
             (d / "source.md").write_text(md, encoding="utf-8")
     there = _server_url()

@@ -475,12 +475,19 @@ VIEWS = ("defuddle", "readability")
 LINKS_ONLY = 12   # words: a block at the head all of whose words are links (View PDF, Next article) is the site's
 
 
-def view_of(read):
-    """Which of the readings the browser's button sent to take: (its name, it), or (None, None) when neither has the
-    words to read (the snapshot is read then). Defuddle's, which keeps a page's formulas, abstract and code, unless
-    Readability's has half as many words again: Defuddle took away what it should not have."""
+def views_of(read):
+    """The readings the browser's button sent that have the words to read: {name: it}, in VIEWS' order."""
     got = {k: v for k, v in (read or {}).items() if k in VIEWS and isinstance(v, dict) and isinstance(v.get("html"), str)
            and isinstance(v.get("words"), (int, float)) and v["words"] >= MIN_WORDS}
+    return {k: got[k] for k in VIEWS if k in got}
+
+
+def view_of(read):
+    """Which of the readings the browser's button sent to take by their words alone: (its name, it), or (None, None)
+    when neither has the words to read. Defuddle's, which keeps a page's formulas, abstract and code, unless
+    Readability's has half as many words again: Defuddle took away what it should not have. (capture.reading_of takes
+    the one that differs least from the page; this, when that cannot be told.)"""
+    got = views_of(read)
     d, r = got.get("defuddle"), got.get("readability")
     if d and not (r and r["words"] >= 1.5 * d["words"]):
         return "defuddle", d
