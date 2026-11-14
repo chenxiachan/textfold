@@ -39,7 +39,8 @@ MATHJAX = '<script>window.MathJax = { tex: { inlineMath: [["$", "$"], ["\\\\(", 
 
 def read(html, url="https://blog.example.org/2026/innocent/"):
     with tempfile.TemporaryDirectory() as tmp, mock.patch.object(store, "DATA", Path(tmp)), \
-            mock.patch.object(webpage, "_get", lambda u: (html.encode(), url, "utf-8")), mock.patch.object(webpage.local, "prefetch", lambda srcs: {}):
+            mock.patch.object(webpage, "_get", lambda u: (html.encode(), url, "utf-8")), mock.patch.object(webpage.local, "prefetch", lambda srcs: {}), \
+            mock.patch.object(webpage.local.Images, "_read", side_effect=OSError("no network in the tests")):
         pid = webpage.register(url)
         webpage.fetch(pid)
         d = store.pdir(pid)
@@ -90,6 +91,43 @@ class Dollars(unittest.TestCase):
         md, _ = read(page(f"<p>{FILL}A run costs $5 and the next $6, a_b in words.</p><p>{FILL}</p>"))
         self.assertNotIn("TFTEX", md)
         self.assertIn("costs", md)
+
+
+PANELS = page(f"""<p>{FILL}</p>
+<figure class="post-fig row"><img src="/img/a.png" alt="(a) Sparse"> <img src="/img/b.png" alt="(b) Top-p"> <img src="/img/c.png" alt="(c) Confidence"> <img src="/img/d.png" alt="(d) Sycophancy"></figure>
+<p><em>Each panel varies one knob and reports the final consensus.</em></p>
+<figure><img src="data:image/gif;base64,R0lGODdhAQABAPAAAP///wAAACwAAAAAAQABAAACAkQBADs=" width="1" height="1"><img src="/img/lazy.png" alt="One picture, lazily loaded"></figure>
+<figure><img src="/img/e.png" alt="e"><p>{FILL}A paragraph written inside a figure stays a paragraph.</p><img src="/img/f.png" alt="f"></figure>
+<p>{FILL}</p>""")
+
+
+class Panels(unittest.TestCase):
+    """Several pictures in one <figure> (a figure's panels, side by side on its page) stay one figure, laid out as an
+    arXiv paper's subfigures; trafilatura made each a figure of its own, one under the other, at the column's width."""
+    @classmethod
+    def setUpClass(cls):
+        cls.md, cls.html = read(PANELS)
+
+    def test_a_figures_panels_stay_one_figure_side_by_side(self):
+        self.assertEqual(self.md.count('<div class="ltx_flex_figure">'), 1)
+        group = self.md[self.md.index("ltx_flex_figure"):]
+        group = group[:group.index("</figure>")]
+        self.assertEqual(re.findall(r'alt="([^"]+)"', group), ["(a) Sparse", "(b) Top-p", "(c) Confidence", "(d) Sycophancy"])
+        self.assertNotIn("ltx_flex_break", group)   # (four in one row)
+        doc = parse(self.html, {"id": "web-x", "title": "Innocent agents"})
+        self.assertEqual(sum(1 for b in doc["blocks"] if b.get("k") == "fig" and "ltx_flex_figure" in b.get("html", "")), 1)
+
+    def test_a_lazy_loaders_stand_in_is_no_panel(self):
+        self.assertIn("lazy.png", self.md)   # (one picture: a figure of its own, as before)
+        self.assertEqual(self.md.count("ltx_flex_figure"), 1)   # (the four panels' alone)
+
+    def test_a_figure_with_words_of_its_own_is_read_as_before(self):
+        self.assertIn("A paragraph written inside a figure stays a paragraph.", self.md)
+
+    def test_six_panels_are_two_rows_of_three(self):
+        html = webpage._panels_html({"pics": [(f"/p{k}.png", "") for k in range(6)], "cap": ""})
+        self.assertEqual(html.count("ltx_flex_break"), 1)
+        self.assertEqual(html.split("ltx_flex_break")[0].count("ltx_flex_cell"), 3)
 
 
 if __name__ == "__main__":

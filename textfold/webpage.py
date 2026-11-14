@@ -274,7 +274,8 @@ def _clean(md, title):
 MATH = "TFMATH{}Q"
 INLINE = "TFTEX{}Q"
 EMBED = "TFEMBED{}Q"
-HELD = re.compile(r"(TFMATH\d+Q|TFTEX\d+Q|TFEMBED\d+Q)")
+PANELS = "TFPANELS{}Q"
+HELD = re.compile(r"(TFMATH\d+Q|TFTEX\d+Q|TFEMBED\d+Q|TFPANELS\d+Q)")
 TEX = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.S)
 # $...$ in a page's text is a formula only where the page says so, in the settings it gives MathJax or KaTeX (a "$" is
 # money as often): then by Pandoc's rule, no space inside either $, no digit after the closing one
@@ -343,18 +344,71 @@ def _embeds(root):
     return found
 
 
+def _real(img):
+    """A picture of the page, not a lazy loader's stand-in (a 1-pixel GIF until a script swaps the picture in)."""
+    src = img.get("src") or ""
+    return bool(src) and not src.startswith("data:image/gif") and not (img.get("width") == "1" or img.get("height") == "1")
+
+
+PANEL_WORDS = 4   # words a panel may have beside it, outside the caption: its letter, "(a)", a short label
+NOT_PANELS = {"p", "table", "ul", "ol", "dl", "pre", "blockquote", "figure", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+
+def _panels(root):
+    """Each <figure> holding several pictures and nothing else but its caption (a figure's panels, (a) to (d), that its
+    page lays side by side) a placeholder, in its place: trafilatura would make each picture a figure of its own, one
+    under the other. A figure with words of its own (paragraphs, a table, a figure in it, or a page's figure left open
+    that runs on over the article) is read as before. What it is, by placeholder: its pictures (address, alt) and its
+    caption (HTML)."""
+    from lxml import html as lhtml
+    found = []
+    for fig in list(root.iter("figure")):
+        if fig.getparent() is None or any(a.tag == "figure" for a in fig.iterancestors()):
+            continue
+        pics = [(im.get("src"), im.get("alt") or "") for im in fig.iter("img") if _real(im)]
+        if len(pics) < 2:
+            continue
+        cap = next(fig.iter("figcaption"), None)
+        inside = [e for e in fig.iter() if e is not fig and isinstance(e.tag, str) and (cap is None or not _within(e, cap))]
+        words = len(fig.text_content().split()) - (len(cap.text_content().split()) if cap is not None else 0)
+        if any(e.tag in NOT_PANELS for e in inside) or words > PANEL_WORDS * len(pics):
+            continue
+        inner = (htmllib.escape(cap.text or "", quote=False) + "".join(lhtml.tostring(c, encoding="unicode") for c in cap)) if cap is not None else ""
+        found.append({"pics": pics, "cap": re.sub(r"\s+", " ", inner).strip()})
+        held = fig.makeelement("p", {})   # (a paragraph of its own, as an embed's)
+        held.text, held.tail = PANELS.format(len(found) - 1), fig.tail
+        fig.getparent().replace(fig, held)
+    return found
+
+
+def _panels_html(f):
+    """A figure's panels as LaTeXML writes a figure's subfigures (the reader lays them side by side): rows of up to
+    four, three a row for six or nine."""
+    n = len(f["pics"])
+    per = n if n <= 4 else 3 if n % 3 == 0 else 4
+    cells = []
+    for k, (src, alt) in enumerate(f["pics"]):
+        if k and k % per == 0:
+            cells.append('<div class="ltx_flex_break"></div>')
+        cells.append(f'<div class="ltx_flex_cell"><img src="{htmllib.escape(src)}" alt="{htmllib.escape(alt)}"></div>')
+    cap = f"<figcaption>{f['cap']}</figcaption>" if f["cap"] else ""
+    return f'<figure><div class="ltx_flex_figure">{"".join(cells)}</div>{cap}</figure>'
+
+
 def _embed_html(e):
     name = e["title"] or urllib.parse.urlsplit(e["src"]).hostname
     return (f'<figure><a class="pf-embed pf-h-{e["h"]}" href="{htmllib.escape(e["src"])}" title="{htmllib.escape(e["title"])}">'
             f"{htmllib.escape(name, quote=False)}</a></figure>")
 
 
-def _put_back(md, tex, embeds):
+def _put_back(md, tex, embeds, panels=()):
     """The placeholders in the Markdown as what they hold: a formula a paragraph of its own ($$ on lines of their own),
     a figure an HTML block; in a list item, a table's row or a quote, where a paragraph would end it, in its line."""
     def inline(m):
-        k = int(re.search(r"\d+", m.group(0)).group(0))
-        return f"$${tex[k][1]}$$" if m.group(0).startswith("TFMATH") else f"${tex[k][1]}$" if m.group(0).startswith("TFTEX") else _embed_html(embeds[k])
+        w = m.group(0)
+        k = int(re.search(r"\d+", w).group(0))
+        return (f"$${tex[k][1]}$$" if w.startswith("TFMATH") else f"${tex[k][1]}$" if w.startswith("TFTEX")
+                else _panels_html(panels[k]) if w.startswith("TFPANELS") else _embed_html(embeds[k]))
     out = []
     for ln in md.splitlines():
         ln = re.sub(r"TFTEX\d+Q", inline, ln)   # (a formula in the line: there, as written)
@@ -370,6 +424,8 @@ def _put_back(md, tex, embeds):
                         out += ["", piece.strip(), ""]
                 elif piece.startswith("TFMATH"):
                     out += ["", "$$", tex[int(k)][1], "$$", ""]
+                elif piece.startswith("TFPANELS"):
+                    out += ["", _panels_html(panels[int(k)]), ""]
                 else:
                     out += ["", _embed_html(embeds[int(k)]), ""]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip() + "\n"
@@ -386,13 +442,13 @@ def read(page, final):
     _hover_marks(tree)
     notes = _notes(tree)
     _hidden_out(tree)
-    tex, embeds = _tex(tree), _embeds(tree)
+    tex, embeds, panels = _tex(tree), _embeds(tree), _panels(tree)
     md = trafilatura.extract(tree, url=final, output_format="markdown", include_images=True, include_links=True,
                              include_tables=True, include_formatting=True, favor_recall=True) or ""
     if len(HELD.sub("", md).split()) < MIN_WORDS:
         raise ValueError("web-notext")
     info = about(tree, final)
-    md = _put_back(_clean(md, info["title"]), tex, embeds)
+    md = _put_back(_clean(md, info["title"]), tex, embeds, panels)
     html, _ = markdown.to_html(md)
     return _md_noted(md, notes), _noted(html, notes), info
 
