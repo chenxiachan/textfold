@@ -41,7 +41,7 @@ REF_SECTIONS = re.compile(
     r"^(references|notes|citations|footnotes|sources|notes and references|bibliography|works cited|cited sources|"
     r"参考文献|参考资料|注释|脚注|参考來源|參考文獻|參考資料|註釋|腳註|注釈|出典|각주|참고 문헌|"
     r"einzelnachweise|anmerkungen|literatur|notes et références|références|referencias|notas|"
-    r"referências|note|bibliografia|примечания|литература)$", re.I)
+    r"referências|note|bibliografia|примечания|литература|παραπομπές|σημειώσεις|βιβλιογραφία|πηγές)$", re.I)
 
 
 def ref_of(ref):

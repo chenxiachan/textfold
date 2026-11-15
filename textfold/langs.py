@@ -36,6 +36,7 @@ LANGS = {
     "id": ("Indonesian", "Bahasa Indonesia", "latin"),
     "vi": ("Vietnamese", "Tiếng Việt", "latin"),
     "th": ("Thai", "ภาษาไทย", "thai"),
+    "el": ("Greek", "Ελληνικά", "greek"),
 }
 
 _CHARS = {"takeaway": 28, "reason": 50, "topic": 6, "section": 32, "unit": "characters"}
@@ -75,6 +76,8 @@ def punctuation_rule(code):
         return f"{n} full-width punctuation; no dashes (——)."
     if code == "ja":
         return "Japanese punctuation (、。); no dashes (——)."
+    if code == "el":
+        return "Standard Greek punctuation: the question mark is ; and the raised dot · is a semicolon; quotes are « »; no em or en dashes as punctuation, use commas or colons."
     if code == "th":
         return "Thai writing: no spaces between the words of a clause, one space between clauses; no em or en dashes as punctuation."
     return f"Standard {n} punctuation; no em or en dashes as punctuation, use commas or colons."
@@ -84,9 +87,9 @@ def punctuation_rule(code):
 # Among the languages above, from the text alone: the script with the most words (a CJK character counts as a part of
 # one, about 1.7 to a word; Thai, written without spaces too, about 4 characters to a word), then within it Japanese by its kana, Traditional Chinese by the characters only it writes
 # so, Ukrainian by its own letters, Vietnamese by its tone marks, and the other Latin scripts by the small words each
-# uses most. A text it cannot tell is English, as every text was before.
+# uses most; Greek by its own alphabet. A text it cannot tell is English, as every text was before.
 _SCRIPTS = {"latin": r"[A-Za-z\u00c0-\u024f\u1e00-\u1eff]+", "cyrillic": r"[\u0400-\u04ff]+", "devanagari": r"[\u0900-\u097f]+",
-            "hangul": r"[\uac00-\ud7af\u1100-\u11ff]+"}
+            "hangul": r"[\uac00-\ud7af\u1100-\u11ff]+", "greek": r"[\u0370-\u03ff\u1f00-\u1fff]+"}
 _HAN, _KANA, _THAI_SCRIPT = r"[\u4e00-\u9fff\u3400-\u4dbf]", r"[\u3040-\u30ff]", r"[\u0e00-\u0e7f]"   # (_THAI: Thai's budgets)
 _SIMPLIFIED = "这们个来时说为国学会对发经过还体关与点实现机开长间问题种后业应进动产让认设计资数据级统处务将东区场结构变标准条网络语历层万号"
 _TRADITIONAL = "這們個來時說為國學會對發經過還體關與點實現機開長間問題種後業應進動產讓認設計資數據級統處務將東區場結構變標準條網絡語歷層萬號"
@@ -133,6 +136,8 @@ def detect(text):
         return "th"
     if script == "devanagari":
         return "hi"
+    if script == "greek":
+        return "el"
     if script == "cyrillic":
         letters = "".join(words["cyrillic"]).lower()
         return "uk" if sum(map(letters.count, "іїєґ")) > 0.01 * len(letters) else "ru"
