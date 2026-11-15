@@ -2,7 +2,7 @@
 a pip install alike (app.js, the page's dialog).
 
 whatsnew.json, beside this file, is written with each release that has something to say: [{version, en, zh}], each
-language's words a list of [title, text], plain text, and after a change what shows it and a link to act on it at
+language's words a list of [title, text] (text may be empty: a line of its own), plain text, and after a change what shows it and a link to act on it at
 once may follow: [title, text, {media, url, label}], each optional (media: a picture of web/news, shipped with the
 app, so that the page asks no other server; url and label: the page's button, the browser's button's store listing). The page shows the reader's language, Traditional Chinese the
 Chinese, every other the English. A release with no entry is a quiet one: the page says only that it is installed.
@@ -47,6 +47,18 @@ def told(version=__version__):
     tmp.replace(store.DATA / "whatsnew.json")
 
 
+def _once(news):
+    """An item a newer release says again is said once, with the newer (0.10.55 says 0.10.54's again, to one who
+    skipped 0.10.54); a release left with nothing of its own is not shown. news: newest first."""
+    said, out = set(), []
+    for e in news:
+        own = {k: [x for x in v if (k, x[0]) not in said] if isinstance(v, list) else v for k, v in e.items()}
+        said |= {(k, x[0]) for k, v in e.items() if isinstance(v, list) for x in v if x}
+        if any(isinstance(v, list) and v for v in own.values()):
+            out.append(own)
+    return out
+
+
 def state(now=__version__):
     """What the page says as it opens: {version, updated: whether this release is new to the reader, news: the words of
     the releases since the one they were last told of (newest first; none: a quiet update), last: the newest release's
@@ -61,4 +73,4 @@ def state(now=__version__):
         news = [e for e in mine if _v(e["version"]) == _v(now)]   # (a library from before: this release's words)
     else:
         news = [e for e in mine if _v(e["version"]) > _v(seen)]
-    return {"version": now, "updated": seen is None or _v(now) > _v(seen), "news": news, "last": mine[0] if mine else None}
+    return {"version": now, "updated": seen is None or _v(now) > _v(seen), "news": _once(news), "last": mine[0] if mine else None}

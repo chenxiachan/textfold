@@ -57,6 +57,16 @@ class State(Base):
         news.told("0.10.46")
         self.assertEqual((news.state("0.10.46")["updated"], news.state("0.10.46")["news"]), (False, []))
 
+    def test_an_item_a_newer_release_says_again_is_said_once(self):
+        """0.10.55 says 0.10.54's again: one who skipped 0.10.54 reads it once, with 0.10.55."""
+        news.NEWS.write_text(json.dumps(RELEASES + [{"version": "0.10.48", "en": [["Later", "More."], ["Steadier", ""]],
+                                                     "zh": [["之后", "更多。"], ["更稳", ""]]}]), encoding="utf-8")
+        self.library(seen="0.10.44")
+        got = news.state("0.10.48")
+        self.assertEqual([(e["version"], [x[0] for x in e["en"]], [x[0] for x in e["zh"]]) for e in got["news"]],
+                         [("0.10.48", ["Later", "Steadier"], ["之后", "更稳"]), ("0.10.47", ["Not yet"], ["还没有"])])   # (0.10.45: none of its own)
+        self.assertEqual(got["last"]["version"], "0.10.48")
+
     def test_a_quiet_release_says_only_that_it_is_installed(self):
         self.library(seen="0.10.45")
         got = news.state("0.10.46")
@@ -79,8 +89,8 @@ class Package(unittest.TestCase):
         self.assertEqual(len({e["version"] for e in got}), len(got))
         for e in got:
             self.assertRegex(e["version"], r"^\d+\.\d+\.\d+$")
-            for lang in ("en", "zh"):   # [title, text], and what shows it and a link to act on it: {media, url (https), label}
-                self.assertTrue(e[lang] and all(len(x) in (2, 3) and all(isinstance(w, str) and w.strip() for w in x[:2]) for x in e[lang]), (e["version"], lang))
+            for lang in ("en", "zh"):   # [title, text (or none: a line of its own)], and what shows it and a link to act on it: {media, url (https), label}
+                self.assertTrue(e[lang] and all(len(x) in (2, 3) and isinstance(x[0], str) and x[0].strip() and isinstance(x[1], str) for x in e[lang]), (e["version"], lang))
                 for x in e[lang]:
                     if len(x) == 3:
                         self.assertLessEqual(set(x[2]), {"media", "url", "label"})

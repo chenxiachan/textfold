@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.10.55",
+    "en": [
+      ["🧩 TextFold's browser extension is now in the Chrome Web Store (for Chrome / Brave / Edge)", "You are no longer limited to reading local PDFs. Public technical blogs, publishers' pages, even pages that need a sign-in or a subscription: click the extension on the tab you are reading, and it takes the article and opens it in TextFold, in a new tab beside it.\n- Five levels of semantic folding: from the outline of the whole to the original word for word, zoom the level of detail seamlessly.\n- Your whole workflow, as with PDFs: highlights, notes, questions about a passage and translation, all carried over.\nInstall it and give it a try: turn the long reads piling up in your browser into knowledge you truly take in ✨", {"media": "browser.webp", "url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "Add to Chrome"}],
+      ["Some stability improvements", ""]
+    ],
+    "zh": [
+      ["🧩 TextFold 浏览器插件现已正式上架 Chrome Web Store（支持 Chrome / Brave / Edge）", "现在，你不再局限于阅读本地 PDF。无论是公开的技术博客、出版社网页，还是需要登录/订阅权限的受限页面，只需在当前标签页点击插件，即可直接提取正文并在相邻的新标签页中打开 TextFold。\n- 五层语义折叠：从全局大纲到逐字原文，无缝缩放阅读粒度。\n- 完整工作流对齐：完美继承 PDF 端的高亮、笔记、局部提问与翻译体验。\n欢迎安装体验，把你浏览器里积压的长文变成真正吸收的知识 ✨", {"media": "browser.webp", "url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "添加到 Chrome"}],
+      ["做了一定的稳定性修改", ""]
+    ]
+  },
+  {
     "version": "0.10.54",
     "en": [
       ["🧩 TextFold's browser extension is now in the Chrome Web Store (for Chrome / Brave / Edge)", "You are no longer limited to reading local PDFs. Public technical blogs, publishers' pages, even pages that need a sign-in or a subscription: click the extension on the tab you are reading, and it takes the article and opens it in TextFold, in a new tab beside it.\n- Five levels of semantic folding: from the outline of the whole to the original word for word, zoom the level of detail seamlessly.\n- Your whole workflow, as with PDFs: highlights, notes, questions about a passage and translation, all carried over.\nInstall it and give it a try: turn the long reads piling up in your browser into knowledge you truly take in ✨", {"media": "browser.webp", "url": "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf", "label": "Add to Chrome"}]
