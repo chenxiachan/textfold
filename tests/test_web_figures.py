@@ -4,6 +4,10 @@ link the reader draws in a sandboxed frame. A formula written in the text for Ma
 out with its _ escaped (\\sigma\\_i), and ran into the paragraph after it; it is kept as written, a paragraph of its
 own. $...$ is a formula only where the page's own settings say so. No network: the page is given.
 
+A page sent from the browser has no <iframe>: its snapshot has each frame where the page shows it, as what the frame
+showed with its scripts out, and its interactive figures were read as a still of their labels and numbers (a reader's
+bug report, 2026-11-16, on the blog these tests copy). Each is the figure it was now, in either reading.
+
 Run from the repo root:
     python3 -m unittest discover tests
 """
@@ -13,7 +17,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from textfold import store, webpage
+from textfold import adapt, store, webpage
 from textfold.parse import parse
 
 FILL = ("Agents in a debate copy their peers, and a small bias in each of them can become a consensus of all of them "
@@ -128,6 +132,72 @@ class Panels(unittest.TestCase):
         html = webpage._panels_html({"pics": [(f"/p{k}.png", "") for k in range(6)], "cap": ""})
         self.assertEqual(html.count("ltx_flex_break"), 1)
         self.assertEqual(html.split("ltx_flex_break")[0].count("ltx_flex_cell"), 3)
+
+
+URL = "https://blog.example.org/2026/innocent/"
+SIM = "Interactive simulator: temperature and consensus"
+# what the frame showed, its scripts out: a simulator's controls and numbers, a still of what it draws
+STILL = ('<div class="controls"><label>sampling temperature T</label><span>0.35</span><button>Run again</button></div>'
+         '<p>conformity λ1.50 round 1 -1 0 +1 out of the tanh curve</p>')
+
+
+def framed(k, src, title, h, inner, host="https://blog.example.org"):
+    """A frame as the browser's button writes it in its snapshot (extension/snapshot.js; background.js, withFrames)."""
+    return (f'<div class="post-embed" src="{src}" title="{title}" style="width: 100%; height: {h}px; border: 0px;" scrolling="no" '
+            f'loading="lazy" data-tf-frame="{k}" data-tf-frame-src="{host}{src}">{inner}</div>')
+
+
+SNAP = page(f"""<p>{FILL}</p>
+{framed(0, "/assets/html/sim.html", SIM, 499, STILL)}
+<p><em>You set the temperature; each run lasts thirty rounds.</em></p>
+<p>{FILL}After the figure.</p>
+<div width="1" height="1" data-tf-frame="1" data-tf-frame-src="https://tracker.example.net/pixel"></div>
+<p>{FILL}The end.</p>""")
+# the article as a reading view in the browser gave it (Readability's: the page's class and style dropped)
+VIEW = (f'<div><p>{FILL}</p><div src="/assets/html/sim.html" title="{SIM}" data-tf-frame="0" '
+        f'data-tf-frame-src="https://blog.example.org/assets/html/sim.html">{STILL}</div>'
+        f'<p><em>You set the temperature; each run lasts thirty rounds.</em></p><p>{FILL}After the figure.</p><p>{FILL}The end.</p></div>')
+
+
+class FromTheBrowser(unittest.TestCase):
+    def embeds(self, html):
+        return re.findall(r'<a class="pf-embed pf-h-(\d+)" href="([^"]+)" title="([^"]*)"', html)
+
+    def test_a_frame_of_the_snapshot_is_the_figure_it_was_in_its_place(self):
+        _, html, _ = webpage.read(SNAP, URL)
+        self.assertEqual(self.embeds(html), [("499", "https://blog.example.org/assets/html/sim.html", SIM)])
+        self.assertLess(html.index(FILL.strip()[:40]), html.index("pf-embed"))
+        self.assertLess(html.index("pf-embed"), html.index("You set the temperature"))
+        for still in ("sampling temperature T", "Run again", "conformity"):
+            self.assertNotIn(still, html)
+        self.assertNotIn("tracker.example.net", html)
+
+    def test_a_reading_views_frame_too_as_high_as_on_the_snapshot(self):
+        html, _ = webpage.read_view({"html": VIEW, "title": ""}, SNAP, URL)
+        self.assertEqual(self.embeds(html), [("499", "https://blog.example.org/assets/html/sim.html", SIM)])
+        self.assertNotIn("conformity", html)
+        from textfold import semantic
+        doc = parse(semantic.normalize(html, sizes=True), {"id": "web-x", "title": "Innocent agents"})
+        self.assertEqual(sum(1 for b in doc["blocks"] if b.get("k") == "fig" and "pf-embed" in b.get("html", "")), 1)
+
+    def test_a_page_whose_article_is_in_a_frame_is_read_as_its_words(self):
+        shell = ("<html><head><title>Innocent agents</title></head><body><nav>Home About</nav>"
+                 + framed(0, "/reader/article.html", "Article", 2000,
+                          f"<article><h1>Innocent agents</h1><p>{FILL}</p><p>{FILL}Second.</p><p>{FILL}Third.</p></article>")
+                 + "</body></html>")
+        _, html, _ = webpage.read(shell, URL)
+        self.assertIn("Third.", html)
+        self.assertEqual(self.embeds(html), [])
+
+    def test_the_check_says_which_interactive_figure_a_reading_lacks(self):
+        lacking = VIEW.replace(VIEW[VIEW.index('<div src='):VIEW.index("</div><p><em>") + 6], "")
+        c = adapt.check(SNAP, URL, lacking)
+        self.assertEqual((c["interactive figures"], c["interactive figures not there"]), ({"page": 1, "reading": 0}, [SIM]))
+        self.assertEqual(c["missing (blocks)"], 0)   # (the still's words are the figure's, not the article's)
+        html, _ = webpage.read_view({"html": VIEW, "title": ""}, SNAP, URL)
+        kept = adapt.check(SNAP, URL, html)
+        self.assertEqual((kept["interactive figures"], kept["interactive figures not there"]), ({"page": 1, "reading": 1}, []))
+        self.assertEqual(adapt.cost(c) - adapt.cost(kept), 1)
 
 
 if __name__ == "__main__":

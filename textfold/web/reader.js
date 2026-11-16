@@ -649,7 +649,8 @@
   }
 
   // a page sent from the browser, checked against the page as it was sent (/api/check: adapt.stored), on the line
-  // under its authors: blocks of the article the reading did not take, formulas not as on the page, words the page
+  // under its authors: blocks of the article the reading did not take, its interactive figures the reading does not
+  // show (their names), formulas not as on the page, words the page
   // does not show, what it took from outside the article. Folded; an example opens the page at its place (a text
   // fragment), in the reader's browser
   let VS = null;
@@ -665,8 +666,8 @@
     const c = VS, t = T[ui];
     if (!c) return;
     const say = (s, k) => s.replace('{n}', k);
-    const bad = [[c.missing, t.vs_missing, c.missing_eg, true], [c.formulas, t.vs_formulas, c.formulas_eg, true],
-      [c.not_on_page, t.vs_notpage, c.not_on_page_eg, false],
+    const bad = [[c.missing, t.vs_missing, c.missing_eg, true], [c.frames, t.vs_frames, c.frames_eg, false],
+      [c.formulas, t.vs_formulas, c.formulas_eg, true], [c.not_on_page, t.vs_notpage, c.not_on_page_eg, false],
       [c.not_folding >= 0.5 ? Math.round(c.not_folding * 100) : 0, t.vs_unfolded, [], false]].filter((x) => x[0]);
     const soft = [[c.outside, t.vs_outside, c.outside_eg, true], [c.short, t.vs_short, c.short_eg, true]].filter((x) => x[0]);
     const box = h('div', 'vs'); box.dataset.id = 'ph:vs';
@@ -674,9 +675,11 @@
     const head = t.vs_head + (t.vs_head.endsWith('：') ? '' : ' ');   // (a full-width colon has its space in it)
     if (!bad.length && !soft.length) { box.textContent = head + t.vs_none; return; }
     // red only when the reading lacks much of the article: a tenth of its text, a tenth of its formulas (three at
-    // least), or half of its text does not fold. A block or two lacking, a date, a byline: said in the line's own grey
+    // least), a tenth of its interactive figures (one at least), or half of its text does not fold. A block or two
+    // lacking, a date, a byline: said in the line's own grey
     const lost = c.f_page - c.f_reading;
-    const much = c.missing_share >= 0.1 || (lost >= 3 && lost >= 0.1 * c.f_page) || c.not_folding >= 0.5;
+    const much = c.missing_share >= 0.1 || (lost >= 3 && lost >= 0.1 * c.f_page) || c.not_folding >= 0.5
+      || (c.frames > 0 && c.frames >= 0.1 * (c.fr_page || 0));
     const det = h('details');
     const sum = h('summary', much ? 'vs-bad' : null);
     sum.textContent = head + [...bad, ...soft].map(([k, label]) => say(label, k)).join(' · ');

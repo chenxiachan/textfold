@@ -339,22 +339,61 @@ def _height(el):
     return int(float(h)) if re.fullmatch(r"\d+(?:\.\d+)?", h.strip()) else None
 
 
+def _framed(fr):
+    """An <iframe> the reader shows in its place, a page of the web's (not this computer's, not a script's): its
+    address, its name (title), the height the page gave it; or None. One a few pixels high is a tracker's, not a
+    figure."""
+    src = (fr.get("src") or fr.get("data-src") or "").strip()
+    try:
+        u = urllib.parse.urlsplit(src)
+    except ValueError:
+        return None
+    h = _height(fr)
+    if u.scheme not in ("http", "https") or not u.hostname or LOCAL_HOST.match(u.hostname) or (h is not None and h < 60):
+        return None
+    return {"src": src, "title": re.sub(r"\s+", " ", fr.get("title") or fr.get("aria-label") or "").strip(),
+            "h": max(160, min(1400, h or 480))}
+
+
+FRAME_SRC = "data-tf-frame-src"   # (extension/snapshot.js: a frame, where the page shows it, around what it showed)
+
+
+def _frames(root, heights=None):
+    """A browser's snapshot has each frame where the page shows it, as what the frame's page showed with its scripts
+    out (extension/snapshot.js: <div data-tf-frame-src> around it). A frame of another page is the page's figure, as an
+    <iframe> is in a fetched page, its words a still of what its scripts draw (a simulator's labels and numbers): each
+    is the <iframe> it was again, empty, in its place, for _embeds or the reader to show. Unless the article is in it,
+    more than half of the text (a page that shows its article in a frame): its words are read, as before. heights:
+    each frame's height on the snapshot, {(its number, its address): px}, for a reading view that dropped the page's
+    style. Returns how many."""
+    total, n = len(re.sub(r"\s+", "", root.text_content())), 0
+    for div in list(root.xpath(f"//*[@{FRAME_SRC}]")):
+        if not _within(div, root):   # (in a frame already put back)
+            continue
+        if total and len(re.sub(r"\s+", "", div.text_content())) > total / 2:
+            continue
+        attrs = {k: v for k, v in div.attrib.items() if k not in ("data-tf-frame", FRAME_SRC, "data-tf-shadow", "src")}
+        fr = div.makeelement("iframe", attrs)
+        fr.set("src", div.get(FRAME_SRC))
+        h = (heights or {}).get((div.get("data-tf-frame"), div.get(FRAME_SRC)))
+        if _height(fr) is None and h:
+            fr.set("height", str(h))
+        if _framed(fr) is None:   # (a blank frame, a tracker's: as before)
+            continue
+        fr.tail = div.tail
+        div.getparent().replace(div, fr)
+        n += 1
+    return n
+
+
 def _embeds(root):
-    """Each <iframe> of another page (its address is the web's, not this computer's) a placeholder, in its place: what
-    it is, by placeholder: its address, its name (title), the height the page gave it. One a few pixels high is a
-    tracker's, not a figure."""
+    """Each <iframe> the reader shows (_framed) a placeholder, in its place: what it is, by placeholder."""
     found = []
     for fr in list(root.iter("iframe")):
-        src = (fr.get("src") or fr.get("data-src") or "").strip()
-        try:
-            u = urllib.parse.urlsplit(src)
-        except ValueError:
+        e = _framed(fr)
+        if e is None:
             continue
-        h = _height(fr)
-        if u.scheme not in ("http", "https") or not u.hostname or LOCAL_HOST.match(u.hostname) or (h is not None and h < 60):
-            continue
-        found.append({"src": src, "title": re.sub(r"\s+", " ", fr.get("title") or fr.get("aria-label") or "").strip(),
-                      "h": max(160, min(1400, h or 480))})
+        found.append(e)
         held = fr.makeelement("p", {})   # (a paragraph of its own: trafilatura drops a few words left between blocks)
         held.text, held.tail = EMBED.format(len(found) - 1), fr.tail
         fr.getparent().replace(fr, held)
@@ -456,6 +495,7 @@ def read(page, final):
     warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
     import trafilatura
     tree = visible(page, final)
+    _frames(tree)   # (a browser's snapshot: its frames, the <iframe>s they were)
     _hover_marks(tree)
     notes = _notes(tree)
     _hidden_out(tree)
@@ -625,9 +665,12 @@ def read_view(view, page, final):
     addresses; the page's title, what stands before it and the site's bits at its head gone; bullets written into list
     items gone; formulas as MathML, not as drawn; Defuddle's footnote list as normalize knows one), and what the
     page says of itself, from the snapshot (about): its title the reading view's when the page names itself nowhere
-    TextFold reads."""
+    TextFold reads. A frame of another page (_frames) is a figure the reader shows in its place, as it does a fetched
+    page's."""
     from lxml import html as lhtml
-    info = about(visible(page, final), final)
+    tree = visible(page, final)
+    heights = {(el.get("data-tf-frame"), el.get(FRAME_SRC)): _height(el) for el in tree.xpath(f"//*[@{FRAME_SRC}]")}
+    info = about(tree, final)
     host = re.sub(r"^www\.", "", urllib.parse.urlparse(final).hostname or "")
     if info["title"] == host and (view.get("title") or "").strip():
         info["title"] = view["title"].strip()[:300]
@@ -636,6 +679,13 @@ def read_view(view, page, final):
     for a in root.iter("a"):   # (a place on the page, a footnote's mark: there again)
         if (a.get("href") or "").startswith(final + "#"):
             a.set("href", a.get("href")[len(final):])
+    _frames(root, heights)
+    for fr in list(root.iter("iframe")):
+        e = _framed(fr)
+        if e is not None:
+            fig = lhtml.fragment_fromstring(_embed_html(e))
+            fig.tail = fr.tail
+            fr.getparent().replace(fr, fig)
     _from_title(root, info["title"])
     _head(root)
     _bullets(root)

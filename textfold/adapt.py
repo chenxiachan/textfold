@@ -12,6 +12,7 @@ paywall's cut for a reader without access, is never sought elsewhere.
   python3 -m textfold adapt <url> [--snapshot page.html [--rendered]]           what an agent is given: the outline
   python3 -m textfold adapt <url> [--snapshot page.html] --try recipe.json [--keep]   the page read with a recipe
 """
+import html as htmllib
 import json
 import re
 import unicodedata
@@ -448,6 +449,7 @@ def shown(page, url, recipe=None):
     and their marks out of the text (they show on hover), its pictures' alt texts in (a screen reader says them).
     (its tree, its words, normalized)"""
     root = seen(_tag(page, recipe)[0] if recipe else page, url)
+    webpage._frames(root)   # (a frame of another page: a figure, its words a still of what it draws)
     _formulas_out(root)
     webpage._hover_marks(root)
     webpage._notes(root)
@@ -670,6 +672,10 @@ def _said(page_parts, url, doc, read, area):
     outside = [t for kind, t in shown_blocks if kind in ("paragraph", "raw") and t.replace(" ", "") not in in_area
                and t.replace(" ", "") in flat and len(t) >= 2]
     pictures = len({img.get("src") for img in area.iter("img") if webpage._real(img)})
+    kept = {htmllib.unescape(h) for b in doc["blocks"] if b.get("k") == "fig"
+            for h in re.findall(r'class="pf-embed[^"]*" href="([^"]+)"', b.get("html") or "")}
+    framed = {e["src"]: e["title"] for e in map(webpage._framed, area.iter("iframe")) if e}
+    lost_frames = [title or src for src, title in framed.items() if src not in kept]
     text = sum(len(t) for k, t in shown_blocks if k in ("paragraph", "raw", "caption"))
     unfolded = sum(len(t) for k, t in shown_blocks if k == "raw") / text if text else 0.0
     group = lambda d, n: {k: (len(v), v[:3]) for k, v in sorted(d.items(), key=lambda kv: -len(kv[1]))[:n]}  # noqa: E731
@@ -685,6 +691,8 @@ def _said(page_parts, url, doc, read, area):
             "not in the reading, outside the article": group(elsewhere, 5),
             "formulas": {"page": in_area.count(FORMULA), "reading": flat_got.split("|")[0].count(FORMULA)},
             "pictures": {"page": pictures, "reading": len(doc.get("images") or [])},
+            "interactive figures": {"page": len(framed), "reading": len(framed) - len(lost_frames)},
+            "interactive figures not there": lost_frames,
             "in figures shown as a link": carded, "not folding": round(unfolded, 2),
             "not found again by its words": len(twice), "not found again (e.g.)": twice[:3], "page blocks": page_blocks}
 
@@ -720,12 +728,13 @@ def check(page, url, html, recipe=None, doc=None):
 
 def cost(c):
     """How far a reading is from its page, by what check says of it: blocks of the article it lacks, those whose
-    formulas are not there, the article's formulas and pictures it lacks (a display formula is a block of none but it),
+    formulas are not there, the article's formulas, pictures and interactive figures it lacks (a display formula is a
+    block of none but it),
     places where it has words the page does not show, the article's blocks its text that does not fold stands for; a
     short label it lacks counts a quarter, a block it took from outside the article half (a byline is less than a
     paragraph lost)."""
     return (c["missing (blocks)"] + c["formulas not there"] + max(0, c["formulas"]["page"] - c["formulas"]["reading"])
-            + max(0, c["pictures"]["page"] - c["pictures"]["reading"])
+            + max(0, c["pictures"]["page"] - c["pictures"]["reading"]) + len(c["interactive figures not there"])
             + c["not on the page (count)"] + c["not folding"] * c["page blocks"]
             + 0.25 * c["missing, short"] + 0.5 * c["from outside the article"])
 
@@ -753,7 +762,9 @@ def report(c):
                  + "".join(f'\n    "{e[:90]}"' for e in c["formulas not there (e.g.)"]))
     lines.append(f"of the reading's text, in blocks that do not fold: {c['not folding']:.0%}")
     lines.append(f"formulas: {c['formulas']['page']} on the page, {c['formulas']['reading']} in the reading;  "
-                 f"pictures: {c['pictures']['page']} on the page, {c['pictures']['reading']} in the reading")
+                 f"pictures: {c['pictures']['page']} on the page, {c['pictures']['reading']} in the reading;  "
+                 f"interactive figures: {c['interactive figures']['page']} on the page, {c['interactive figures']['reading']} in the reading"
+                 + "".join(f'\n    not there: "{e[:90]}"' for e in c["interactive figures not there"]))
     lines.append(f"paragraphs of the reading from outside the article: {c['from outside the article']}"
                  + "".join(f'\n    "{e[:90]}"' for e in c["from outside the article (e.g.)"]))
     if c["not in the reading, outside the article"]:
@@ -775,7 +786,8 @@ def stored(pid):
     (not_folding, 0 to 1); how many blocks of the article the reading lacks (missing;
     short: a label, a short item), whose formulas are not there (formulas), what the reading has that the page does
     not show (not_on_page), what it took from outside the article (outside), each with examples as the page writes
-    them (…_eg); the formulas on the page and in the reading; edited: its text was edited in TextFold, and the edits
+    them (…_eg); the formulas on the page and in the reading; the interactive figures of the article not in the
+    reading (frames, their names: frames_eg) and on the page (fr_page); edited: its text was edited in TextFold, and the edits
     differ from the page too. None: no such page (any other document)."""
     from . import store
     if not store.valid_id(pid):
@@ -796,7 +808,9 @@ def stored(pid):
            "not_on_page": c["not on the page (count)"], "not_on_page_eg": c["not on the page"],
            "outside": c["from outside the article"], "outside_eg": c["from outside the article (e.g.)"],
            "f_page": c["formulas"]["page"], "f_reading": c["formulas"]["reading"], "edited": bool(meta.get("replaced")),
-           "not_folding": c["not folding"], "missing_share": c["missing (share)"]}
+           "not_folding": c["not folding"], "missing_share": c["missing (share)"],
+           "frames": len(c["interactive figures not there"]), "frames_eg": c["interactive figures not there"][:5],
+           "fr_page": c["interactive figures"]["page"]}
     _CHECKED[pid] = (key, got)
     return got
 

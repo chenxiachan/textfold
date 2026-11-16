@@ -50,13 +50,18 @@ place. The check needs no recipe and is the same for every site:
   on the same page (its contents) is neither the reading's nor missing from it, and a short label is counted apart.
 - **Text that does not fold**: how much of the reading's running text is in raw blocks (not code, not a table), as when
   a reading view wraps the article's paragraphs in one.
+- **An interactive figure is a figure.** A frame of another page on the web, as tall as a figure, is the page's figure
+  (`webpage._frames`): the snapshot holds what the frame showed with its scripts out, a still of a simulator's labels and
+  numbers, which is neither the article's words nor missing from the reading. The check says which of the article's
+  interactive figures the reading does not show, by their names.
 
 **The reading kept is the one closest to the page.** A page sent from the browser comes with two readings, Defuddle's
 and Readability's, and TextFold reads the snapshot itself too. All three are checked against the same article (found
 from the words of all of them, so that one that took a part of the article is not measured against that part alone),
 and the one that differs least is kept (`adapt.choose`, `adapt.cost`, `capture.reading_of`): blocks it lacks, formulas
 not in their places, formulas and pictures it lacks, words the page does not show, text that does not fold; a short
-label a quarter, a block from outside the article half. Defuddle first when they are as close. Before, Defuddle's was
+label a quarter, a block from outside the article half; an interactive figure it lacks counts as a picture does.
+Defuddle first when they are as close. Before, Defuddle's was
 kept unless Readability's had half as many words again: of the 18 pages sent from the browser in the library on
 2026-11-14, six are now read otherwise (Defuddle left out 47 blocks of a Wikipedia article, Readability 2), and the sum
 of what the check says against them halved (677.7 to 312.9).
@@ -65,6 +70,16 @@ Measured on the 157 pages of the OpenShelf set as fetched, and on 18 pages sent 
 first Zhihu article read had half of its words missing (126 blocks: Zhihu writes a nested list as `<ul><ul>`, which the
 reader skipped) and 19 one-symbol formulas taken for footnotes (the extension read a formula reading `n` as a note's
 mark, its hidden TeX as the note); with both fixed it checks clean but for 5 blocks of the site's furniture.
+
+**Interactive figures from the browser (2026-11-17).** A research blog's interactive figures, each a page of its own
+in an `<iframe>`, were kept in their place for a page TextFold fetches (0.10.53) but not for one sent from the browser:
+its snapshot has no `<iframe>`, only each frame's content where the page shows it, and both reading views read that
+still as words (a simulator's labels and numbers). Now a frame of another page is the `<iframe>` it was again, in the
+reading TextFold makes of the snapshot and in a reading view's that kept the frame's place (Readability keeps it;
+Defuddle drops its attributes, so its reading lacks the figures and costs more), its height the snapshot's. A frame
+holding more than half of the text is the article itself, read as words as before. The blog's 6 figures: 0 to 6; the
+other 21 pages sent from the browser in the library read as before (their frames are adverts, trackers and blank
+ones: none of them in a reading, none in an article).
 
 ## Toward a layer over the live page (a browser extension)
 
