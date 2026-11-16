@@ -28,6 +28,9 @@ STATUS.md
 /build/
 /dist/
 *.egg-info/
+# Nix build output
+/result
+/result-*
 # the website's build (site/build.py): the pages it writes, and the preview with its checks
 site/dist/
 site/preview.html

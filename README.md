@@ -153,6 +153,27 @@ What you read is then kept in the clone.
 
 </details>
 
+<details>
+<summary>Build or run the release with Nix</summary>
+
+With Nix and flakes enabled, run from a clone of this repository:
+
+```bash
+nix run . -- serve                  # http://localhost:3017
+nix build                          # result/bin/textfold
+nix profile install .#textfold      # install the textfold command
+```
+
+The package includes Python, the core dependencies (including PDF reading) and the web reader, on Linux and
+macOS for x86-64 and ARM64. It uses the installed application's data folder, shared with the desktop app.
+The optional Anthropic SDK, model agents, Node.js for the ChatGPT bridge, and the MinerU engine are separate from
+the core package. Connect a model as described below; OpenAI-compatible APIs need no additional packages.
+
+`flake.lock` pins Nixpkgs, and `nix/pdf-inspector.nix` pins the PDF reader that is not in Nixpkgs. `nix flake check`
+builds the package and checks its imports, command and bundled reader. To update Nixpkgs, run `nix flake update nixpkgs`.
+
+</details>
+
 ## Connect a model
 
 TextFold uses a model you already have, and there is no account to create. It looks for one when it starts; if it finds none, the first page offers the ways in.
