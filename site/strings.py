@@ -8,7 +8,7 @@ REPO = "https://github.com/chenxiachan/textfold"
 DL = REPO + "/releases/latest/download/"
 FILES = {"mac_arm": "TextFold-mac-arm64.dmg", "mac_x64": "TextFold-mac-x64.dmg", "win": "TextFold-win-x64-setup.exe"}
 STORE = "https://chromewebstore.google.com/detail/textfold/lkfemlafmabkdjedldmjebdpccdaeglf"   # the browser's button
-LANGS_NATIVE = "English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português, Italiano, Русский, हिन्दी, Svenska, Dansk, Norsk bokmål, Suomi, Nederlands, Polski, Čeština, Українська, Türkçe, Bahasa Indonesia, Tiếng Việt, ภาษาไทย"   # textfold/langs.py's, by their own names (tests/test_languages.py)
+LANGS_NATIVE = "English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português, Italiano, Русский, हिन्दी, Svenska, Dansk, Norsk bokmål, Suomi, Nederlands, Polski, Čeština, Українська, Türkçe, Bahasa Indonesia, Tiếng Việt, ภาษาไทย, Ελληνικά"   # textfold/langs.py's, by their own names (tests/test_languages.py)
 
 S = {
     # the head (search engines, AI answers, shared links)

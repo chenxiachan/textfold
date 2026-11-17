@@ -16,7 +16,7 @@ const IMPORTED_ID = String.raw`md-[a-z0-9]+(?:-[a-z0-9]+)*|pmc\d{4,9}|ppr\d{4,9}
 // the levels (textfold/fold.py), and the languages a text can be read in (textfold/langs.py)
 const LEVELS = ['topic', 'takeaway', 'key', 'brief', 'full'];
 const LANGS = ['en', 'zh', 'zh-Hant', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'it', 'ru', 'hi', 'sv', 'da', 'nb', 'fi', 'nl', 'pl',
-  'cs', 'uk', 'tr', 'id', 'vi', 'th'];
+  'cs', 'uk', 'tr', 'id', 'vi', 'th', 'el'];
 
 const ARXIV = new RegExp(`^(?:${ARXIV_ID})$`);
 const IMPORTED = new RegExp(`^(?:${IMPORTED_ID})$`);
