@@ -383,6 +383,7 @@ TextFold is a tool, and its license covers its code. When you share a file, foll
 <a href="https://github.com/ShiTan-677" title="@ShiTan-677"><img src="https://github.com/ShiTan-677.png?size=80" width="40" height="40" alt="@ShiTan-677" /></a>
 <a href="https://github.com/SockingPanda" title="@SockingPanda"><img src="https://github.com/SockingPanda.png?size=80" width="40" height="40" alt="@SockingPanda" /></a>
 <a href="https://github.com/Ekuboh" title="@Ekuboh"><img src="https://github.com/Ekuboh.png?size=80" width="40" height="40" alt="@Ekuboh" /></a>
+<a href="https://github.com/zervm" title="@zervm"><img src="https://github.com/zervm.png?size=80" width="40" height="40" alt="@zervm" /></a>
 
 Contributions are welcome: start with [CONTRIBUTING.md](https://github.com/chenxiachan/textfold/blob/main/CONTRIBUTING.md).
 
