@@ -70,7 +70,6 @@ def tokenize_text(text, font=None, out=None):
 
 
 GREEK = "\u0370-\u03ff\u1f00-\u1fff"
-GREEK_CAPS = "\u0386\u0388-\u038f\u0391-\u03ab\u1f08-\u1f0f\u1f18-\u1f1d\u1f28-\u1f2f\u1f38-\u1f3f\u1f48-\u1f4d\u1f59-\u1f5f\u1f68-\u1f6f"
 
 
 def is_greek(s):
@@ -78,8 +77,9 @@ def is_greek(s):
 
 
 def split_sentences(toks):
-    """Sentence ranges [start, end) over a token list. Greek asks with ; (or its own sign, U+037E), so a ; ends a
-    sentence after a Greek word, and a Greek sentence opens on a Greek capital."""
+    """Sentence ranges [start, end) over a token list. A sentence opens on a capital of any alphabet (Потом, Über,
+    Ήρθε, not only A to Z), and a single capital before a stop is an initial. Greek asks with ; (or its own sign,
+    U+037E), so a ; ends a sentence after a Greek word."""
     greek_q = {";", "\u037e"}
     cjk_stops = {"。", "！", "？"}
     dandas = {"।", "॥"}   # Hindi's full stops; Devanagari has no capitals to start the next sentence
@@ -92,7 +92,7 @@ def split_sentences(toks):
         prev = (toks[i - 1].get("t") or "") if i > 0 else ""
         if i < start or not (t in stops or (t in greek_q and is_greek(prev))):
             continue
-        if t == "." and (prev.lower() in ABBREV or re.fullmatch(rf"[A-Z{GREEK_CAPS}]", prev)):
+        if t == "." and (prev.lower() in ABBREV or (len(prev) == 1 and prev.isupper())):
             continue
         end = i + 1
         # Keep a run of stops and any closing quotes/brackets with the sentence it ends.
@@ -107,7 +107,7 @@ def split_sentences(toks):
         if cjk and t == "." and i == start + 1 and prev.isdigit():
             cjk = False   # "1.研究背景": a number and its stop open a heading or a list item, they end no sentence
         danda = any(toks[j].get("t") in dandas for j in range(i, end))
-        if cjk or danda or (toks[end - 1].get("s") and ("a" in nxt or re.match(rf"[A-Z{GREEK_CAPS}0-9(\[“\"‘«]", head))):
+        if cjk or danda or (toks[end - 1].get("s") and ("a" in nxt or head[:1].isupper() or re.match(r"[0-9(\[“\"‘«]", head))):
             bounds.append((start, end))
             start = end
     if start < n:

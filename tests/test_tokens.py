@@ -53,6 +53,18 @@ class Sentences(unittest.TestCase):
         self.check_sentences('He said, "It holds." Next we test it.',
                              ['He said, "It holds."', 'Next we test it.'])
 
+    def test_a_sentence_opens_on_a_capital_of_any_alphabet(self):
+        self.check_sentences("Он ушёл домой. Потом он вернулся.", ["Он ушёл домой.", "Потом он вернулся."])
+        self.check_sentences("Він пішов. Потім повернувся.", ["Він пішов.", "Потім повернувся."])
+        self.check_sentences("Es war spät. Über Nacht schneite es.", ["Es war spät.", "Über Nacht schneite es."])
+        self.check_sentences("C'est fini. État des lieux.", ["C'est fini.", "État des lieux."])
+        self.check_sentences("To jest dom. Żaden kot.", ["To jest dom.", "Żaden kot."])
+        self.check_sentences("C'est fini. « Pourquoi ? » demanda-t-elle.", ["C'est fini.", "« Pourquoi ? » demanda-t-elle."])
+
+    def test_an_initial_of_any_alphabet_ends_no_sentence(self):
+        self.check_sentences("Писал А. Блок. Потом ушёл.", ["Писал А. Блок.", "Потом ушёл."])
+        self.check_sentences("Laut Ö. Yılmaz gilt es. Dann nicht.", ["Laut Ö. Yılmaz gilt es.", "Dann nicht."])
+
     def test_chinese_with_english_abbreviations(self):
         self.check_sentences("参见Fig. 2，数值为3.14。结果成立。", ["参见Fig. 2，数值为3.14。", "结果成立。"])
 
