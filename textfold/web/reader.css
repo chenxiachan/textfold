@@ -1130,7 +1130,7 @@ html.compare .chunk > .side, html.compare .chunk > .lside { position: static; }
 .ty-seg button { padding: 5px 10px; font: 550 12.5px var(--sans); }
 .ty-seg button[aria-checked="true"], .ty-seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(30, 22, 8, .1), 0 0 0 1px var(--line-2); }
 .ty-seg [data-font="serif"] { font-family: var(--serif); font-size: 13.5px; }
-.ty-reset { justify-self: end; border: 0; background: none; padding: 2px 4px; font: 550 12px var(--sans); color: var(--accent); cursor: pointer; }
+.ty-reset { margin-inline-start: auto; white-space: nowrap; border: 0; background: none; padding: 2px 4px; font: 550 12px var(--sans); color: var(--accent); cursor: pointer; }
 /* the colour of the reader's highlights at each level, chosen among the hues (reader.js, renderTypeMenu: data-hl) */
 .ty-hl { display: grid; gap: 7px; }
 .ty-hrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1150,7 +1150,9 @@ html.compare .chunk > .side, html.compare .chunk > .lside { position: static; }
 .ty-seg [data-style]::before { content: ""; flex: none; width: 11px; height: 11px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(60, 40, 10, .28); }
 .ty-seg [data-style="default"]::before { background: linear-gradient(135deg, #E6E0D8 50%, #3A362F 50%); }
 .ty-seg [data-style="paper"]::before { background: linear-gradient(135deg, #E8D8BA 50%, #4B3F30 50%); }
-.ty-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* (Reset, shown once a setting is changed, goes to a line of its own at the right when the buttons leave it no room,
+   rather than folding them and itself onto two lines: #135) */
+.ty-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 10px; }
 .ty-modes { display: flex; flex-wrap: wrap; gap: 8px; }
 .ty-focus { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: none; border-radius: 8px; padding: 4px 6px 4px 10px;
   font: 550 12.5px var(--sans); color: var(--ink-2); cursor: pointer; }
