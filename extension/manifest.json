@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TextFold",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApZAtAoJeesNCCgonLekRTivGhCvvDX8kXItItWf+6V7yUszp51epb1zwnQldsvRF0ZdKL3dfeKOGyvrfdGevXggJYOTIA8MO/NQ8BlBiWVv2IHxVh06gfiMSwvrJJOWfJfJiQNxSa/wFWoZQBGQ+se2dUhtCXnA6UBsuj9v8cbtZmHDZVmrf+cSaEPFsMlL3udOTtdjTzgUi9Xua8e5PjB2kkaXmJ/7zybS6mzLj/SnV1EcycTFBHTOgL9cxZOz/V/4VLoxAlMTpopr9mXOz4q4btvGf8LPRnktYYsTcuv7q9fVLRUOpLLq+FbwMqDHLqzyTA/h9s94qPVlEPdqcwQIDAQAB",
   "description": "__MSG_description__",
   "default_locale": "en",
