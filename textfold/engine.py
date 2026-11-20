@@ -147,7 +147,8 @@ def status():
 
 def _run(cmd, env, log, stop, on_line=None):
     """A step of the install or a conversion: its output to the job's log (tqdm's bars, split on carriage returns,
-    to on_line); stopped at once when the reader stops the job."""
+    to on_line); stopped at once when the reader stops the job. A step that fails says so with the last line it wrote
+    (a Python error's own line, the error itself), which the reader sees where else there were only its exit code (#140)."""
     p = subprocess.Popen([str(c) for c in cmd], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if stop is not None:   # a model that hangs on a page prints nothing for minutes: stopped from outside the read
         def watch():
@@ -156,7 +157,7 @@ def _run(cmd, env, log, stop, on_line=None):
                     p.terminate()
                     return
         threading.Thread(target=watch, daemon=True).start()
-    buf, last = b"", ""
+    buf, last, said = b"", "", ""
     try:
         while True:
             chunk = p.stdout.read1(4096)
@@ -171,7 +172,8 @@ def _run(cmd, env, log, stop, on_line=None):
                 if on_line:
                     on_line(line)
                 if line != last and not re.search(r"\d+%\|", line):   # bars go to on_line only, not the log
-                    log(line[-300:])
+                    said = line[-300:]
+                    log(said)
                 last = line
         code = p.wait()
     finally:
@@ -180,7 +182,7 @@ def _run(cmd, env, log, stop, on_line=None):
     if stop is not None and stop.is_set():
         raise Stopped()
     if code:
-        raise RuntimeError(f"{Path(str(cmd[0])).name} exited with {code}")
+        raise RuntimeError(f"{Path(str(cmd[0])).name} exited with {code}" + (f": {said}" if said else ""))
 
 
 def _uv(e, log, stop):
