@@ -312,7 +312,11 @@
 .tt-x:hover { background: var(--surface); color: var(--ink); }
 .tt-x svg { width: 16px; height: 16px; }
 .tt-body { padding: 12px 28px 4px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
-@media (min-width: 721px) and (min-height: 560px) { .tt-body { min-height: 330px; } }   /* every page the same height: the arrows stay put */
+/* every page in one place, the others unseen there: the dialog the tallest page's height, so the arrows, dots and keys
+   stay put on any screen (#141; a fixed least height did not hold where a page is taller, and a phone's moved most) */
+.tt-pages { display: grid; }
+.tt-page { grid-area: 1 / 1; min-width: 0; }
+.tt-page.off { visibility: hidden; }
 .tt-label { margin: 0 0 12px; font: 650 11.5px/1.4 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
 .tt-grid { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 14px; }
 .tt-card { display: flex; flex-direction: column; min-width: 0; padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line-2);
@@ -406,13 +410,14 @@
   }
 
   function render() {
-    const w = words(), ideas = PAGES[page], last = page === PAGES.length - 1;
+    const w = words(), last = page === PAGES.length - 1;
     const keepFocus = dialog.contains(document.activeElement) && document.activeElement.closest('.tt-nav');
-    dialog.querySelector('.tt-label').textContent = w['p' + (page + 1)];
-    const grid = dialog.querySelector('.tt-grid');
-    grid.style.setProperty('--n', ideas.length);
-    grid.innerHTML = ideas.map((k) => `<div class="tt-card"><div class="tt-art"><svg viewBox="0 0 120 72" aria-hidden="true">${ART[k]}</svg></div>`
-      + `<div><h3>${w[k + '_t']}</h3><p>${w[k + '_d']}</p></div></div>`).join('');
+    // every page, the one shown and the others laid out in the same place unseen (.off): the dialog is as tall as the
+    // tallest page in this language at this width, and nothing below moves from one page to the next (#141)
+    dialog.querySelector('.tt-pages').innerHTML = PAGES.map((ideas, i) => `<div class="tt-page${i === page ? '' : ' off'}">`
+      + `<p class="tt-label">${esc(w['p' + (i + 1)])}</p><div class="tt-grid" style="--n:${ideas.length}">`
+      + ideas.map((k) => `<div class="tt-card"><div class="tt-art"><svg viewBox="0 0 120 72" aria-hidden="true">${ART[k]}</svg></div>`
+        + `<div><h3>${w[k + '_t']}</h3><p>${w[k + '_d']}</p></div></div>`).join('') + '</div></div>').join('');
     dialog.querySelector('.tt-body').scrollTop = 0;
     const nav = dialog.querySelector('.tt-nav');
     nav.innerHTML = `<button type="button" class="tt-arrow" data-go="-1" aria-label="${esc(w.prev)}" title="${esc(w.prev)}"${page === 0 ? ' disabled' : ''}>${ICON.prev}</button>`
@@ -462,7 +467,7 @@
     root.innerHTML = `<div class="tt" role="dialog" aria-modal="true" aria-labelledby="tt-title" tabindex="-1" lang="${esc(window.DR_I18N ? window.DR_I18N.htmlLang(lang) : lang)}">`
       + `<div class="tt-head"><div><h2 class="tt-title" id="tt-title">${esc(w.title)}</h2><p class="tt-sub">${esc(w.sub)}</p></div>`
       + `<button type="button" class="tt-x" aria-label="${esc(w.close)}" title="${esc(w.close)}">${ICON.x}</button></div>`
-      + '<div class="tt-body"><p class="tt-label"></p><div class="tt-grid"></div></div><div class="tt-nav"></div>'
+      + '<div class="tt-body"><div class="tt-pages"></div></div><div class="tt-nav"></div>'
       + `<div class="tt-keys"><span><kbd>1</kbd>–<kbd>5</kbd> ${esc(w.k_levels)}</span><span><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + ${esc(w.k_scroll)} ${esc(w.k_zoom)}</span>`
       + `<span><kbd>L</kbd> ${esc(w.k_lang)}</span><span><kbd>←</kbd><kbd>→</kbd> ${esc(w.k_pages)}</span><span><kbd>Esc</kbd> ${esc(w.k_close)}</span></div></div>`;
     dialog = root.firstChild;
