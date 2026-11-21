@@ -807,6 +807,20 @@ window.DR_I18N = (() => {
   };
   for (const [code, words] of Object.entries(SEL)) Object.assign(S[code], words);
   S.en.up_dev = 'Run from the code, this copy does not update itself.';
+  for (const [code, message] of Object.entries({
+    en: 'Could not locate this figure or table in the PDF.',
+    zh: '未能在 PDF 中定位这张图或表。',
+    'zh-Hant': '未能在 PDF 中定位這張圖或表。',
+    ja: 'PDF 内でこの図または表の位置を特定できませんでした。',
+    ko: 'PDF에서 이 그림 또는 표의 위치를 찾지 못했습니다.',
+    es: 'No se pudo localizar esta figura o tabla en el PDF.',
+    fr: 'Impossible de localiser cette figure ou ce tableau dans le PDF.',
+    de: 'Diese Abbildung oder Tabelle wurde im PDF nicht gefunden.',
+    pt: 'Não foi possível localizar esta figura ou tabela no PDF.',
+    it: 'Impossibile individuare questa figura o tabella nel PDF.',
+    ru: 'Не удалось найти этот рисунок или таблицу в PDF.',
+    hi: 'PDF में यह चित्र या तालिका नहीं मिली।',
+  })) S[code].pdf_caption_missing = message;
   const NATIVE = { en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português', it: 'Italiano', ru: 'Русский', hi: 'हिन्दी' };
   const HTML_LANG = { zh: 'zh-CN', 'zh-Hant': 'zh-TW' };
   // a text that is not a paper (a web page, a README, a PDF, a letter): the questions about it in its words

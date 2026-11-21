@@ -3877,6 +3877,12 @@ math { font-size: 1.05em; }
   npick.before(cmpBtn);
   let cmp = null;   // while open: the pane, the pages, every word on them with its boxes, and each paragraph's place
   const pdfNorm = (s) => s.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  function pdfCaptionLabel(text) {
+    const line = text.trim().normalize('NFKC');
+    const m = /^(fig(?:ure)?|tab(?:le)?)\.?\s+((?:[a-z]\.?)?\d+(?:\.\d+)*[a-z]?|[ivxlcdm]+)(?=\s|[:|–—]|\.(?:\s|$)|$)(?:\s*([:|–—]|\.(?=\s|$)))?/i.exec(line);
+    return m && { key: m[1][0].toLowerCase() + m[2].toLowerCase(), prefix: [pdfNorm(m[1]), pdfNorm(m[2])],
+      separated: !!m[3] || m[0] === line };
+  }
   function cmpLabel() {
     cmpBtn.textContent = T[ui].compare;
     cmpBtn.title = T[ui].compare_tip;
@@ -4122,7 +4128,17 @@ math { font-size: 1.05em; }
   // every word on the pages, in reading order, with its boxes (scale 1): a word broken by a hyphen at a line's end is
   // one word, and so is a word the PDF wrote in two pieces
   async function indexWords() {
-    const words = [];
+    const words = [], captions = new Map(), numberedCaptionWords = new Set();
+    let line = '', start = 0;
+    const addCaption = () => {
+      const label = pdfCaptionLabel(line);
+      if (!label || words[start]?.w !== label.prefix[0] || words[start + 1]?.w !== label.prefix[1]) return;
+      const starts = captions.get(label.key) || [];
+      starts.push({ lo: start, separated: label.separated });
+      captions.set(label.key, starts);
+      // Include the next word when the label occupies its own line.
+      for (let i = start + 2; i < Math.max(start + 3, words.length); i++) numberedCaptionWords.add(i);
+    };
     for (const p of cmp.pages) {
       const tc = await p.page.getTextContent();
       let lastY = null, lastEnd = null;
@@ -4131,6 +4147,8 @@ math { font-size: 1.05em; }
         const tx = cmp.lib.Util.transform(p.vp.transform, it.transform);
         const fh = Math.hypot(tx[2], tx[3]) || it.height || 8, x = tx[4], base = tx[5], s = it.str, L = s.length;
         const newLine = lastY === null || Math.abs(base - lastY) > fh * 0.5;
+        if (newLine) { addCaption(); line = ''; start = words.length; }
+        line += ' ' + s;
         lastY = base;
         const re = /\S+/g;
         let m, first = true;
@@ -4154,7 +4172,9 @@ math { font-size: 1.05em; }
       const a = grams.get(k);
       if (a) a.push(i); else grams.set(k, [i]);
     }
-    Object.assign(cmp, { words, grams });
+    addCaption();
+    const captionLabels = new Map(D.blocks.filter((b) => b.k === 'fig' && b.cap).map((b) => [b.cap, b.label]));
+    Object.assign(cmp, { words, grams, captions, numberedCaptionWords, captionLabels });
   }
 
   // a PDF read through the engine: each paragraph's place on its page, as the engine found the block it came from.
@@ -4174,19 +4194,61 @@ math { font-size: 1.05em; }
       cmp.layout.set(uid, { page: at.page, boxes, area: boxes.reduce((a, b) => a + b.w * b.h, 0) });
     }
   }
-  // where a paragraph is: its runs of three words found on the pages, the run of agreeing places they vote for, and
-  // the words from its first match to its last (formula symbols on the page sit between them, so a place may drift)
+  function pdfSpan(lo, hi) {
+    return { lo, hi, page: cmp.words[lo].page, boxes: boxesOf(lo, hi) };
+  }
+  function locateCaption(label, uw) {
+    if (!uw.length) return null;
+    const key = pdfCaptionLabel(label || '')?.key, starts = key && cmp.captions.get(key);
+    if (starts) {
+      const matches = [];
+      for (const { lo, separated } of starts) {
+        const start = lo + 2;
+        const text = locateText(uw, start);
+        // Without a separator, the caption text must start right after the label. Running text often starts
+        // a line with "Table 1 shows…" and may repeat some of the title's words later in the sentence.
+        if (text && (separated || text.lo === start)) { matches.push(pdfSpan(lo, text.hi)); continue; }
+        // PDF text can join words that are separate in HTML, especially beside math or punctuation.
+        const head = uw.slice(0, 8).join('');
+        const page = cmp.words[lo].page;
+        let found = '';
+        for (let i = start; cmp.words[i]?.page === page && found.length < head.length; i++) {
+          found += cmp.words[i].w;
+          if (found === head) matches.push(pdfSpan(lo, i));
+        }
+      }
+      return matches.length === 1 ? matches[0] : null;
+    }
+    const span = locateText(uw, null, true);
+    if (span && key && cmp.numberedCaptionWords.has(span.lo)) return null;
+    return span;
+  }
+
   function locate(uid) {
     if (cmp.layout) return cmp.layout.get(uid) || null;
     if (cmp.spans.has(uid)) return cmp.spans.get(uid);
     const u = U[uid], uw = u ? u.toks.filter((t) => t.t).map((t) => pdfNorm(t.t)).filter(Boolean) : [];
-    const hitsOf = (i) => { const a = cmp.grams.get(`${uw[i]} ${uw[i + 1]} ${uw[i + 2]}`); return a && a.length <= 30 ? a : null; };
+    const span = cmp.captionLabels.has(uid) ? locateCaption(cmp.captionLabels.get(uid), uw) : locateText(uw);
+    cmp.spans.set(uid, span);
+    return span;
+  }
+
+  // Runs of three words vote for agreeing places. A caption label can narrow the search to its own text.
+  function locateText(uw, start = null, unique = false) {
+    const hitsOf = (i) => {
+      const a = cmp.grams.get(`${uw[i]} ${uw[i + 1]} ${uw[i + 2]}`);
+      if (start !== null) return a?.filter((j) => Math.abs(j - i - start) <= 8 && j >= start && cmp.words[j + 2].page === cmp.words[start]?.page);
+      return a && a.length <= 30 ? a : null;
+    };
     let span = null;
     if (uw.length >= 3) {
+      if (unique && (hitsOf(0) || []).filter((j) => uw.every((w, i) => cmp.words[j + i]?.w === w)).length > 1) return null;
       const votes = new Map();
       for (let i = 0; i + 2 < uw.length; i++) for (const j of hitsOf(i) || []) { const k = Math.round((j - i) / 8); votes.set(k, (votes.get(k) || 0) + 1); }
       let k0 = null, n0 = 0;
-      for (const [k, n] of votes) { const all = n + (votes.get(k - 1) || 0) + (votes.get(k + 1) || 0); if (all > n0) { n0 = all; k0 = k; } }
+      const score = (k) => votes.get(k) + (votes.get(k - 1) || 0) + (votes.get(k + 1) || 0);
+      for (const k of votes.keys()) { const all = score(k); if (all > n0) { n0 = all; k0 = k; } }
+      if (unique && [...votes.keys()].some((k) => Math.abs(k - k0) > 2 && score(k) === n0)) return null;
       if (k0 !== null && n0 >= Math.max(2, Math.min(5, Math.floor((uw.length - 2) * 0.25)))) {
         let lo = -1, hi = -1, lastI = 0;
         for (let i = 0; i + 2 < uw.length; i++) {
@@ -4195,10 +4257,9 @@ math { font-size: 1.05em; }
             if (ok) { if (lo < 0) lo = j; hi = j + 2; lastI = i; break; }
           }
         }
-        if (lo >= 0) span = { lo, hi, page: cmp.words[lo].page, boxes: boxesOf(lo, hi) };
+        if (lo >= 0) span = pdfSpan(lo, hi);
       }
     }
-    cmp.spans.set(uid, span);
     return span;
   }
   function boxesOf(lo, hi) {   // the words' boxes, one per line
@@ -4221,8 +4282,8 @@ math { font-size: 1.05em; }
     const before = cmp.current;
     cmp.current = span;
     cmp.picked = how === 'pick';
-    for (const p of cmp.pages) if ((before && before.boxes.some((b) => b.page === p.n)) || span.boxes.some((b) => b.page === p.n)) paintMarks(p);
-    if (how === 'stay') return;
+    for (const p of cmp.pages) if (before?.boxes.some((b) => b.page === p.n) || span?.boxes.some((b) => b.page === p.n)) paintMarks(p);
+    if (!span || how === 'stay') return;
     const b = span.boxes[0], p = cmp.pages[b.page - 1], sc = cmp.scroller;
     const y = p.el.offsetTop + b.y * cmp.scale, last = span.boxes[span.boxes.length - 1];
     const yEnd = cmp.pages[last.page - 1].el.offsetTop + (last.y + last.h) * cmp.scale;
@@ -4265,10 +4326,19 @@ math { font-size: 1.05em; }
   docEl.addEventListener('click', (e) => {
     if (!cmp || !cmp.grams) return;
     const fig = e.target.closest('figure.fig'), u = e.target.closest('.u[data-u]') || (fig && fig.querySelector('figcaption.u'));
-    if (!u) return;
-    const span = locate(u.dataset.u);
-    cmp.follow = u.dataset.u;
-    if (span) showSpan(span, 'pick');
+    if (!u && !fig) return;
+    const uid = u?.dataset.u;
+    const span = uid ? locate(uid) : null;
+    if (fig) clearTimeout(followTimer);
+    cmp.follow = uid;
+    if (span) {
+      if (fig && linkMsg?.textContent === T[ui].pdf_caption_missing) linkMsg.classList.remove('on');
+      showSpan(span, 'pick');
+    }
+    else if (fig) {
+      showSpan(null, 'stay');
+      sayLink(T[ui].pdf_caption_missing);
+    }
   });
   // a page clicked: the paragraph there (the narrowest that holds the word under the pointer)
   function onPageClick(e) {
