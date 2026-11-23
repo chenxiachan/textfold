@@ -1225,3 +1225,21 @@ html.focus footer.zoom, html.focus .chatbtn { transform: translateY(28px); opaci
 html.focus:not(.show-bottom) footer.zoom *, html.focus:not(.show-bottom) .chatbtn { pointer-events: none !important; }
 html.focus.show-bottom footer.zoom, html.focus.show-bottom .chatbtn { transform: none; opacity: 1; }
 @media print { .rpill { display: none !important; } }
+
+/* Explicit Zotero annotation colors. */
+.zcolor-ffd400 { --zcolor: #ffd400; }
+.zcolor-ff6666 { --zcolor: #ff6666; }
+.zcolor-5fb236 { --zcolor: #5fb236; }
+.zcolor-2ea8e5 { --zcolor: #2ea8e5; }
+.zcolor-a28ae5 { --zcolor: #a28ae5; }
+.zcolor-e56eee { --zcolor: #e56eee; }
+.zcolor-f19837 { --zcolor: #f19837; }
+.zcolor-aaaaaa { --zcolor: #aaaaaa; }
+.np-coding { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.np-coding label { display: flex; align-items: center; gap: 6px; }
+.np-coding input, .np-coding select, .np-coding button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; }
+.np-coding input { flex: 1; min-width: 0; }
+.zcolor { --hl: var(--zcolor); --hl-ink: var(--zcolor); --hl-key: var(--zcolor); --hl-take: var(--zcolor); }
+.tk.hl.zcolor, .tr.hl.zcolor, .hlsp.zcolor, .eq.hl.zcolor {
+  background-color: color-mix(in srgb, var(--zcolor) 60%, transparent);
+}
