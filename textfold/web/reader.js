@@ -236,14 +236,18 @@
   // its shade (pieces(): sh; note.shade, 1 light or 3 deep, the usual 2 none: reader.css .sh1, .sh3), in the colour of
   // the level the note was made at (toneOf: tn-src, Full and Brief, the author's words; tn-key, tn-take, the written
   // line at Key, at Takeaway). The colour of each level is the reader's (the Aa menu), so a note keeps no colour
+  const CODE_COLORS = ['#ffd400', '#ff6666', '#5fb236', '#2ea8e5', '#a28ae5', '#e56eee', '#f19837', '#aaaaaa'];
+  const codeColor = (n) => CODE_COLORS.includes(n?.color) ? n.color : '';
+  const colorClass = (n) => codeColor(n) ? ' zcolor zcolor-' + n.color.slice(1) : '';
   const SHADES = [1, 2, 3];
   const shadeOf = (n) => (n && (n.shade === 1 || n.shade === 3) ? n.shade : 2);
   const toneOf = (n) => (n.anchor && n.anchor.shown ? (n.anchor.level === 1 ? 'take' : 'key') : 'src');
-  const toneCls = (n) => ` tn-${toneOf(n)}${shadeOf(n) !== 2 ? ` sh${shadeOf(n)}` : ''}`;
+  const markStyle = (n) => colorClass(n) || (shadeOf(n) !== 2 ? ' sh' + shadeOf(n) : '');
+  const toneCls = (n) => ' tn-' + toneOf(n) + markStyle(n);
   // the shade last chosen (a dot clicked): Highlight, and a note written from the bar over a selection, take it
   let lastShade = SHADES.includes(+store.get('dr-shade')) ? +store.get('dr-shade') : 2;
   const useShade = (s) => { if (SHADES.includes(s)) { lastShade = s; store.set('dr-shade', String(s)); } };
-  const hlCls = (p) => (HL[p.hl] || '') + (p.hl && p.sh && p.sh !== 2 ? ` sh${p.sh}` : '');
+  const hlCls = (p) => (HL[p.hl] || '') + (p.hl && p.sh ? p.sh : '');
   function fill(el, p) {
     const t = p.tok || {};
     const key = p.gap ? 'gap' : `${t.a || ''}\u0001${t.x || ''}\u0001${t.t || ''}\u0001${t.f || ''}`;
@@ -2147,7 +2151,7 @@
     const list = notesOf.get(`§${cid}`), out = new Map();   // token -> its note's shade class ('' the usual)
     for (const n of list || []) {
       const a = n.anchor;
-      if (a.on === 'summary' && a.lang === lang && a.tokens) for (let i = a.tokens[0]; i <= a.tokens[1]; i++) out.set(i, shadeOf(n) !== 2 ? ` sh${shadeOf(n)}` : '');
+      if (a.on === 'summary' && a.lang === lang && a.tokens) for (let i = a.tokens[0]; i <= a.tokens[1]; i++) out.set(i, markStyle(n));
     }
     return out.size ? out : null;
   }
@@ -2171,7 +2175,7 @@
     // (sh, lineSh: the shade of the note a token or a place of the line is marked by, the latest's)
     const v = view(uid), exact = new Set(), soft = new Set(), old = new Map(), line = new Map(), sh = new Map(), lineSh = new Map();
     for (const n of list) {
-      const a = n.anchor, c = shadeOf(n);
+      const a = n.anchor, c = markStyle(n);
       if (a.shown) {
         const at = shownAt(a);
         if (at) for (let j = at[0]; j <= at[1]; j++) { line.set(j, a.level === 1 ? 4 : 3); lineSh.set(j, c); }
@@ -2205,6 +2209,10 @@
       e.classList.toggle('hl', !!n);
       e.classList.toggle('sh1', !!n && shadeOf(n) === 1);
       e.classList.toggle('sh3', !!n && shadeOf(n) === 3);
+      e.classList.toggle('zcolor', !!codeColor(n));
+      for (const color of CODE_COLORS) {
+        e.classList.toggle('zcolor-' + color.slice(1), codeColor(n) === color);
+      }
     }
   }
   function indexNotes() {
@@ -2219,8 +2227,8 @@
   // the mark of a paragraph (or heading) with notes: a band in the colour of each level its notes were made at, from
   // Full and Brief to Takeaway; a conversation alone leaves it as it was
   function noteBar(el, key) {
-    const tones = new Set((notesOf.get(key) || []).filter((n) => n.kind !== 'ask' && !n.anchor.eq).map(toneOf));   // (an equation's: lit itself)
-    const inks = ['src', 'key', 'take'].filter((g) => tones.has(g)).map((g) => `var(--lv-${g}-ink)`);
+    const inks = [...new Set((notesOf.get(key) || []).filter((n) => n.kind !== 'ask' && !n.anchor.eq)
+      .map((n) => codeColor(n) || `var(--lv-${toneOf(n)}-ink)`))];
     if (!inks.length) { el.style.removeProperty('--note-bar'); return; }
     const k = inks.length;
     el.style.setProperty('--note-bar', k === 1 ? inks[0] : `linear-gradient(${inks.map((c, i) => `${c} ${(i * 100 / k).toFixed(2)}% ${((i + 1) * 100 / k).toFixed(2)}%`).join(', ')})`);
@@ -2566,8 +2574,54 @@
     const q = passage(a), at = a.shown ? lineAt(a) + (lineGone(a) ? ` · ${t.n_line_changed}` : '') : ask ? askedAt(a) : '';
     npop.innerHTML = `<div class="np-quote${a.shown ? ` ai l${a.level}` : ''}${ask ? ` tn-${toneOf(n)}` : toneCls(n)}"><span class="np-where">${esc(whereA(a))}</span> ${texLite(clipTex(q, 160))}` +
       `${at ? `<span class="np-at">${esc(at)}</span>` : ''}</div>${body}` +
-      (draft ? '' : `<div class="np-acts">${!ask && !whole(a) ? `${swatches('shade', toneOf(n), shadeOf(n))}<button type="button" data-act="ask">${esc(t.n_ask)}</button>` : ''}` +
+      (draft ? '' : `<div class="np-acts">${!ask && !whole(a) ? `${codeColor(n) ? '' : swatches('shade', toneOf(n), shadeOf(n))}<button type="button" data-act="ask">${esc(t.n_ask)}</button>` : ''}` +
         `<button type="button" data-act="link">${esc(t.n_copy)}</button><button type="button" data-act="del">${esc(t.n_delete)}</button></div>`);
+    if (!ask && !draft) {
+      const label = t.n_color;
+      const select = h('select', 'np-code-color');
+      select.setAttribute('aria-label', label);
+      select.add(new Option(t.n_color_default, ''));
+      CODE_COLORS.forEach((color, i) => select.add(new Option(t.n_color_names[i], color)));
+      select.value = codeColor(n);
+      const codes = h('input', 'np-code-tags');
+      codes.type = 'text';
+      codes.placeholder = t.n_codes;
+      codes.setAttribute('aria-label', codes.placeholder);
+      codes.value = Array.isArray(n.codes) ? n.codes.join(', ') : '';
+      const row = h('div', 'np-coding');
+      const field = h('label', '', label);
+      field.append(select);
+      const save = h('button', '', t.n_codes_save);
+      save.type = 'button';
+      save.addEventListener('click', async () => {
+        if (popNote?.id !== n.id) return;
+        clearTimeout(saveTimer);
+        const previous = popNote;
+        const next = { ...previous, text: npop.querySelector('.np-text').value };
+        if (select.value) next.color = select.value; else delete next.color;
+        const values = [...new Set(codes.value.split(',').map((value) => value.trim()).filter(Boolean))];
+        if (values.length) next.codes = values; else delete next.codes;
+        popNote = next;
+        save.disabled = true;
+        try {
+          await saveNote(next);
+          if (popNote === next) openNote(next);
+        } catch {
+          if (notes.includes(next)) {
+            notes = notes.map((note) => note === next ? previous : note);
+            indexNotes();
+            notesChanged([keyOf(previous.anchor)]);
+          }
+          if (popNote === next) {
+            popNote = previous;
+            save.disabled = false;
+            save.textContent = t.n_codes_retry;
+          }
+        }
+      });
+      row.append(field, codes, save);
+      npop.querySelector('.np-acts').before(row);
+    }
     texify(npop);
     npop.hidden = false;
     placePop();
@@ -2603,6 +2657,7 @@
   });
   npop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); closeNote(); return; }
+    if (e.target.closest('.np-coding')) return;
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;   // Shift+Enter: a new line, as in the chat
     if (e.target.matches('.np-input')) { e.preventDefault(); sendPop(); }
     // a note is kept and closed, as with Escape; not on a phone or a tablet, whose keyboard has no Shift+Enter: Enter
@@ -2621,7 +2676,7 @@
     if (b.classList.contains('np-cite') && b.dataset.to) { closeNote(); showEvidence(b.dataset.to, targetEl(n.anchor)); return; }
     if (b.dataset.act === 'shade') {   // another shade (what is being written goes with it)
       const sh = +b.dataset.s;
-      if (sh === shadeOf(n)) return;
+      if (sh === shadeOf(n) || codeColor(n)) return;
       const field = npop.querySelector('.np-text'), m = { ...n, text: field ? field.value : n.text };
       if (sh === 2) delete m.shade; else m.shade = sh;
       useShade(sh);

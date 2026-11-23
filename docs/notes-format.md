@@ -73,9 +73,11 @@ more than one way, so it can be found again when the text around it changes.
     "title"`). Its own `quote` stays as it was.
 - **text**: the reader's own note, plain text with line breaks.
 - **shade**, optional, on a `highlight` or `note`: `1` light or `3` deep, as the reader chose it; without it the
-  shade is the usual one (2). A note keeps no colour of its own: its colour is the one of the level it was made at
-  (below), so a reader who changes a level's colour sees all of its notes in the new one. In Markdown a shade is a tag
-  under the block id, `#highlight/light` or `#highlight/deep`.
+  shade is the usual one (2). In Markdown a shade is a tag under the block id, `#highlight/light` or `#highlight/deep`.
+- **color**, optional, on a `highlight` or `note`: an explicit annotation color as one of the Zotero palette's
+  lowercase RGB hex values. It takes priority over the reading level and shade; omit it to use the level's color.
+- **codes**, optional, on a `highlight` or `note`: an array of labels entered by the reader, for qualitative coding
+  and integrations that consume the notes JSON.
 - **thread**: the turns of an `ask` note, in order, each `{ "q", "a", "takeaway", "cites", "next", "model", "lang", "at" }`:
   the question, the answer (Markdown), the answer in one sentence, the units of the paper the answer rests on (in the
   order the answer first cites them), two questions to go on with, the model id, the answer's language and when it was
@@ -100,7 +102,7 @@ more than one way, so it can be found again when the text around it changes.
 
 ## How a note is shown at each level
 
-A mark is shown where it was made, in the colour of that level: Full and Brief (the author's words) share one, Key
+A mark is shown where it was made. Its explicit color takes priority when set. Otherwise it uses the colour of that level: Full and Brief (the author's words) share one, Key
 and Takeaway have one each (yellow, purple and blue at first; the reader picks each in the Aa menu, among eight), in
 the note's shade. Where marks overlap, the latest note's shade shows. The note's card, its line in the notes list and
 the paragraph's mark (a band for each level its notes were made at) take the same colours. The levels leave each
