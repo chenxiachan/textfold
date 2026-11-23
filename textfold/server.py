@@ -1263,7 +1263,7 @@ def withdraw(f):
         pass
 
 
-def serve(port=3017):
+def serve(port=3017, host="127.0.0.1"):
     if os.name == "nt":
         _quiet_children()
     store.initialize_storage(log=lambda line: print(line, flush=True))   # (a library moved in Settings: copied now, once)
@@ -1271,7 +1271,7 @@ def serve(port=3017):
     # look for the agents on this computer while the server comes up, and erase what was deleted 30 days ago
     threading.Thread(target=agents.scan, kwargs={"log": print}, daemon=True).start()
     threading.Thread(target=store.empty_trash, daemon=True).start()
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(jobs))
+    httpd = ThreadingHTTPServer((host, port), make_handler(jobs))
     port = httpd.server_address[1]   # (the one given, or the free one the system chose for 0)
 
     def killed(signum, frame):

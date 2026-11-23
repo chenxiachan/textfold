@@ -1,6 +1,6 @@
 """TextFold.
 
-  python -m textfold serve [--port 3017]                 the local app (landing, sidebar, reader)
+  python -m textfold serve [--port 3017] [--host 127.0.0.1] the local app (landing, sidebar, reader)
   python -m textfold <arxiv id or url> [--lang zh] ...   generate from the command line, then export
   python -m textfold notes.md [--lang zh] ...           the same for a Markdown file
   python -m textfold export <arxiv id>                   one self-contained HTML file in out/<id>/
@@ -155,9 +155,10 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "serve":
         ap = argparse.ArgumentParser(prog="python3 -m textfold serve")
         ap.add_argument("--port", type=int, default=3017)
+        ap.add_argument("--host", default="127.0.0.1", help="interface to bind (default: 127.0.0.1)")
         a = ap.parse_args(sys.argv[2:])
         from .server import serve
-        return serve(a.port)
+        return serve(a.port, host=a.host)
     if len(sys.argv) > 1 and sys.argv[1] == "get":
         from .fold import LEVELS
         ap = argparse.ArgumentParser(prog="python3 -m textfold get", description="A document at one level: the map first, then the parts that matter, deeper.")
