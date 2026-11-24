@@ -48,6 +48,15 @@ def equations(doc):
 
 
 class Equations(unittest.TestCase):
+    def test_math_conversion_waits_for_a_closing_fence(self):
+        inside, outside = r"\(inside\)", r"\(outside\)"
+        for fence in ("```", "~~~"):
+            with self.subTest(fence=fence):
+                source = f"{fence}markdown\n{fence} literal text\n{inside}\n{fence} \t\n\n{outside}"
+                html, _ = markdown.to_html(source)
+                self.assertIn(f"{fence} literal text\n{inside}\n</code>", html)
+                self.assertIn('<span class="math inline">outside</span>', html)
+
     def test_a_long_formula_keeps_its_box(self):
         _, doc = imported(TEXT)
         eqs = equations(doc)
