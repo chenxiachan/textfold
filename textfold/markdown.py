@@ -37,7 +37,8 @@ def math_delimiters(text):
             out.append(line)
         elif fence is not None:
             out.append(line)
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+            if (m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+                    and not line[m.end():].strip(" \t\r\n")):
                 fence = None
         else:
             block.append(line)
