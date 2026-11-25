@@ -2,28 +2,30 @@
 
 The server scans for them at startup (and on demand): every mainstream agent CLI is looked for on PATH,
 on the login shell's PATH, in the usual install directories and under the node version managers, as
-ThoughtDAG's where.cjs does. Five can run a generation, the three ThoughtDAG drives, CodeBuddy and Antigravity:
+ThoughtDAG's where.cjs does. Six can run a generation, the three ThoughtDAG drives, CodeBuddy, Antigravity and opencode:
 
   claude-code  claude -p, structured output by --json-schema        models: fable, opus, sonnet, haiku
   codex        codex exec, structured output by --output-schema      models: `codex app-server` model/list
   pi           pi -p --mode json, JSON asked for in the prompt       models: `pi --mode rpc` get_available_models
   codebuddy    codebuddy -p, structured output by --json-schema      models: the account's, as its --help lists them
   agy          agy --agent, the answer its finish tool's (stream-json) models: `agy models`
+  opencode     opencode run --format json, JSON asked for in the prompt models: its server's (GET /api/model)
 
 CodeBuddy is Tencent's CLI, and WorkBuddy carries a copy of it (cli/bin/codebuddy in the app), which runs on the app's
 own Electron and the WorkBuddy sign-in, as WorkBuddy runs it: no node needed, the reader's WorkBuddy models.
-Antigravity is Google's CLI (agy), on the reader's Google sign-in.
+Antigravity is Google's CLI (agy), on the reader's Google sign-in. opencode brings the providers the reader connected in
+it and its own free models (opencode/…).
 
 The others are reported when found, but not driven yet. A command the reader adds in the settings (a custom agent:
 `mirasim claude`, which runs Claude Code under another name) is run by the driver of the one it speaks as. A model id is ThoughtDAG's:
 `claude/claude-code/opus`, `codex/codex/<model>`, `pi/<provider>/<model>`; CodeBuddy's `codebuddy/codebuddy/<model>`,
-Antigravity's `agy/<model>`.
+Antigravity's `agy/<model>`; opencode's `opencode/<provider>/<model>`.
 Agents run here as one-shot text generators: no tools, no session, a scratch working directory. A question about a
 text can be looked up on the web (tools=True: the switch beside a question; models.ask_spec): the agent's own web
 tools, its own system prompt with ours after it, and nothing that changes a file (Claude Code and CodeBuddy: WebSearch
 and WebFetch alone, no MCP server; Pi: its extensions' tools, none of its own; Codex: its web search, in the read-only
 sandbox it always runs in, where it may read but writes nothing; Antigravity: its web search and page reading, in its
-sandbox). Still no session, and the scratch directory to start in.
+sandbox; opencode: its web search and page reading, nothing else allowed). Still no session, and the scratch directory to start in.
 """
 import contextlib
 import glob
@@ -195,7 +197,7 @@ REGISTRY = [
     ("agy", "Antigravity", "agy", ["~/AppData/Local/agy/bin", "~/.agy/bin", "~/AppData/Local/Programs/antigravity/bin"], True),
     ("gemini", "Gemini CLI", "gemini", [], False),
     ("qwen", "Qwen Code", "qwen", [], False),
-    ("opencode", "opencode", "opencode", ["~/.opencode/bin"], False),
+    ("opencode", "opencode", "opencode", ["~/.opencode/bin"], True),
     ("cursor-agent", "Cursor Agent", "cursor-agent", [], False),
     ("kimi", "Kimi CLI", "kimi", [], False),
     ("amp", "Amp", "amp", [], False),
@@ -206,7 +208,7 @@ REGISTRY = [
     ("iflow", "iFlow CLI", "iflow", [], False),
     ("aider", "Aider", "aider", [], False),
 ]
-PREFIX = {"claude-code": "claude/", "codex": "codex/", "pi": "pi/", "codebuddy": "codebuddy/", "agy": "agy/"}
+PREFIX = {"claude-code": "claude/", "codex": "codex/", "pi": "pi/", "codebuddy": "codebuddy/", "agy": "agy/", "opencode": "opencode/"}
 COMMON = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "~/.bun/bin", "~/.npm-global/bin", "~/.local/bin"]
 if WIN:   # npm's global folder, Claude Code's own installer (~/.local/bin, above), Scoop, Node itself
     COMMON = [os.path.join(os.environ.get("APPDATA") or "~/AppData/Roaming", "npm"), "~/.local/bin", "~/.bun/bin", "~/scoop/shims",
@@ -667,7 +669,115 @@ def _agy_models(path, cmd=None):
     return out
 
 
-CATALOG = {"claude-code": _claude_models, "codex": _codex_models, "pi": _pi_models, "codebuddy": _codebuddy_models, "agy": _agy_models}
+OPENCODE_ID = re.compile(r"[\w.\-]+/\S+")   # (a line of `opencode models`: provider/model)
+# provider/model → its variants (opencode's name for a model's reasoning levels: none, minimal, low, …), as its server
+# lists them; filled by the scan, else on a call's first need (_opencode_variants)
+OPENCODE_VARIANTS = {}
+_opencode_asked = threading.Event()   # (the server asked once: a failure is not asked again on every call)
+_opencode_lock = threading.Lock()
+
+
+def _opencode_api_models(cmd):
+    """The models of opencode's server (GET /api/model), each with its name, variants and inputs; None where the server
+    cannot be asked (an older opencode, its service down)."""
+    try:
+        r = _run([*cmd, "api", "GET", "/api/model"], 30, opencode_env())
+        rows = json.loads(r.stdout).get("data") if r.returncode == 0 else None
+    except (ValueError, AttributeError, OSError, subprocess.TimeoutExpired):
+        return None
+    rows = [m for m in rows or [] if isinstance(m, dict) and m.get("providerID") and m.get("id") and m.get("enabled") is not False]
+    for m in rows:
+        OPENCODE_VARIANTS[f"{m['providerID']}/{m['id']}"] = [v["id"] for v in m.get("variants") or [] if isinstance(v, dict) and v.get("id")]
+    _opencode_asked.set()
+    return rows or None
+
+
+_opencode_mcp = {}   # every MCP server of the reader's opencode config, switched off (_opencode_mcp_off)
+_opencode_mcp_asked = threading.Event()
+
+
+def _opencode_mcp_off(cmd):
+    """The reader's MCP servers (`opencode debug config`: its config files, in either form, `mcp: {name: entry}` or
+    `mcp: {servers: {name: entry}}`), each with enabled: false, for the call's own opencode.json. opencode's service
+    starts a project's MCP servers for each folder it is used in and keeps them: one scratch folder a call, a server
+    left running for each (a hundred calls, a hundred node processes of 100 MB). The entry is the reader's, whole:
+    a bare {enabled: false} does not switch it off."""
+    if not _opencode_mcp_asked.is_set():
+        with _opencode_lock:
+            if not _opencode_mcp_asked.is_set():
+                try:
+                    docs = json.loads(_run([*cmd, "debug", "config"], 30, opencode_env()).stdout)
+                except (ValueError, OSError, subprocess.TimeoutExpired):
+                    docs = []
+                for doc in docs if isinstance(docs, list) else []:
+                    mcp = ((doc or {}).get("info") or {}).get("mcp") if isinstance(doc, dict) else None
+                    mcp = mcp.get("servers", mcp) if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict) else mcp
+                    for name, entry in (mcp or {}).items() if isinstance(mcp, dict) else ():
+                        if isinstance(entry, dict):
+                            _opencode_mcp[name] = {**{k: v for k, v in entry.items() if k not in ("disabled", "enabled")}, "enabled": False}
+                _opencode_mcp_asked.set()
+    return _opencode_mcp
+
+
+def _opencode_variants(model, cmd):
+    if model not in OPENCODE_VARIANTS and not _opencode_asked.is_set():
+        with _opencode_lock:   # (the first calls of a job come together: one of them asks)
+            if not _opencode_asked.is_set():
+                _opencode_api_models(cmd)
+                _opencode_asked.set()
+    return OPENCODE_VARIANTS.get(model, [])
+
+
+# a TextFold reasoning level → the variants that give it, the nearest first. The levels are written at "off" (models.py
+# DEFAULT_THINKING): a model that reasons by default (most of the free ones) otherwise thinks for thousands of tokens
+# before a hundred-token answer, half a minute a call.
+OPENCODE_EFFORT = {"off": ("none", "minimal", "low"), "low": ("low", "minimal", "none"), "medium": ("medium", "low"),
+                   "high": ("high", "medium")}
+
+
+def _opencode_variant(model, effort, cmd):
+    """The variant a call asks for (`-m provider/model#variant`), None for the model's own default: the level's nearest
+    the model has, or a variant of the model's own named as such (xhigh, max)."""
+    if not effort:
+        return None
+    have = _opencode_variants(model, cmd)
+    if effort in have and effort not in OPENCODE_EFFORT:
+        return effort
+    return next((v for v in OPENCODE_EFFORT.get(effort, ()) if v in have), None)
+
+
+def _opencode_models(path, cmd=None):
+    """The models opencode can use: its server's list (names, variants as efforts), else `opencode models`, one
+    provider/model a line: its free ones (opencode/…-free, opencode/big-pickle) and those of the providers the reader
+    connected in it."""
+    rows = _opencode_api_models(cmd or argv(path))
+    if rows:
+        return [{"id": f"opencode/{m['providerID']}/{m['id']}", "name": f"opencode · {m.get('name') or m['id']} ({m['providerID']})",
+                 "runtime": "opencode", "model": f"{m['providerID']}/{m['id']}",
+                 "efforts": OPENCODE_VARIANTS[f"{m['providerID']}/{m['id']}"], "defaultEffort": None,
+                 "vision": "image" in ((m.get("capabilities") or {}).get("input") or [])} for m in rows]
+    r = _run([*(cmd or argv(path)), "models"], 60, opencode_env(path))
+    ids = [line.strip() for line in r.stdout.splitlines() if OPENCODE_ID.fullmatch(line.strip())]
+    if r.returncode or not ids:
+        said = (r.stderr or r.stdout).strip()[:300]
+        raise RuntimeError(f"opencode models exited {r.returncode}: {said}" if r.returncode else "opencode models listed none")
+    return [{"id": f"opencode/{mid}", "name": f"opencode · {mid}", "runtime": "opencode", "model": mid, "efforts": [],
+             "defaultEffort": None} for mid in ids]
+
+
+# calls made at once for a document, where an agent's differ from the 4 of the others: opencode's spend their time
+# waiting on its service (some 6 s before the first word), and its free models answered 12 at once
+JOBS = {"opencode": 8}
+
+
+def jobs_for(spec, default=4):
+    """How many calls a document's generation makes at once with this model spec (a custom agent: as the one it speaks as)."""
+    rt = (spec or {}).get("protocol") if (spec or {}).get("runtime") == "custom" else (spec or {}).get("runtime")
+    return JOBS.get(rt, default)
+
+
+CATALOG = {"claude-code": _claude_models, "codex": _codex_models, "pi": _pi_models, "codebuddy": _codebuddy_models, "agy": _agy_models,
+           "opencode": _opencode_models}
 
 # ── the scan ──────────────────────────────────────────────────────────
 STATE = {"scanned_at": None, "scanning": False, "agents": []}
@@ -747,7 +857,7 @@ def path_of(runtime):
 # was saved, and its model ids have a prefix of their own, so the ids and cached replies of the agents above stay as
 # they are.
 CUSTOM = "custom/"
-PROTOCOLS = {"claude-code": "Claude Code", "codex": "Codex", "pi": "Pi", "agy": "Antigravity"}
+PROTOCOLS = {"claude-code": "Claude Code", "codex": "Codex", "pi": "Pi", "agy": "Antigravity", "opencode": "opencode"}
 
 
 def command_of(command):
@@ -1066,3 +1176,144 @@ def run_agy(model, prompt, schema, system, effort, timeout, tools=False, cmd=Non
     if raw:
         return parse_json(raw, schema), None
     raise _agy_error(said, f"agy exited {r.returncode}")
+
+
+# ── opencode ──────────────────────────────────────────────────────────
+# (it reads Claude Code's CLAUDE.md and skills unless told not to: none of the reader's projects belong in a call)
+OPENCODE_QUIET = {"OPENCODE_DISABLE_AUTOUPDATE": "1", "OPENCODE_DISABLE_CLAUDE_CODE": "1"}
+
+
+def opencode_env(path=None):
+    return {**child_env(), **OPENCODE_QUIET}
+
+
+def _opencode_error(err):
+    """An error event's error, as the reader can act on it: opencode's free models refusing the call (asked again
+    first: _opencode_refused), or what it said."""
+    err = err if isinstance(err, dict) else {"message": str(err)}
+    kind, said = str(err.get("type") or ""), str(err.get("message") or err)[:600]
+    if _opencode_refused(err):
+        return RuntimeError(f"opencode's free models refused the call {1 + len(OPENCODE_REFUSED_WAIT)} times (their usage limit, "
+                            "or too many calls at once): try again later, connect a provider in opencode, or choose another model in Settings")
+    return RuntimeError(f"opencode error{f' ({kind})' if kind else ''}: {said}")
+
+
+# "Free usage limit reached" also comes now and then for one call of several at once, and the next is answered: its
+# retryAfterMs (some 15 h) is not when. Such a call is asked again after these waits, in seconds, before it fails.
+OPENCODE_REFUSED_WAIT = (3, 8)
+
+
+def _opencode_refused(err):
+    return isinstance(err, dict) and (err.get("type") == "provider.free-limit" or "Free usage limit" in str(err.get("message") or ""))
+
+
+# a call's session deleted beside the next calls, not before its answer is handed back (some 0.4 s a call); one at a
+# time, in order
+_opencode_cleaner = None
+
+
+def _opencode_forget(cmd, session, env):
+    global _opencode_cleaner
+    def delete():
+        try:
+            _run([*cmd, "session", "delete", session], 20, env)
+        except Exception:
+            pass
+    with _opencode_lock:
+        if _opencode_cleaner is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _opencode_cleaner = ThreadPoolExecutor(1, thread_name_prefix="opencode-forget")
+    return _opencode_cleaner.submit(delete)
+
+
+def _opencode_read(stdout):
+    """(the reply's text: the text parts of its last message, cost, session id, the error event's error) from
+    `opencode run --format json`, an event a line."""
+    texts, last, cost, session, error = {}, None, 0.0, None, None
+    for line in stdout.splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        session = session or d.get("sessionID")
+        part = d.get("part") if isinstance(d.get("part"), dict) else {}
+        if d.get("type") == "text" and part.get("text") is not None:
+            mid = part.get("messageID")
+            texts.setdefault(mid, []).append(part["text"])
+            last = mid
+        elif d.get("type") == "step_finish" and isinstance(part.get("cost"), (int, float)):
+            cost += part["cost"]
+        elif d.get("type") == "error":
+            error = d.get("error") or d
+    return ("".join(texts[last]) if last in texts else None), cost, session, error
+
+
+OPENCODE_WEB = ("webfetch", "websearch")
+
+
+def _opencode_agent(model, system, tools=False):
+    """Our agent for one call (`.opencode/agent/textfold.md`): our system prompt in place of opencode's, no tool that
+    reads, writes or runs anything (tools: its web search and page reading alone).
+    The reader's own providers get no tools at all: a lean request. opencode's own provider (opencode/…: its free
+    models) refuses a request without its tools ("Free usage limit reached", at once, whatever the allowance): there
+    the tools are kept in the request, every one on "ask", and a non-interactive run rejects whatever asks ("This
+    non-interactive run cannot ask the user for permission, so the request was rejected"), so none of them ever runs.
+    (Never with --auto, which approves what asks.)"""
+    if model.startswith("opencode/"):
+        rules = "permission:\n  \"*\": ask\n" + "".join(f"  {t}: allow\n" for t in (OPENCODE_WEB if tools else ()))
+        note = "Call no tools" + (" but web search and page reading" if tools else "") + ": they are not yours to use here."
+    else:
+        rules = "tools:\n  \"*\": false\n" + "".join(f"  {t}: true\n" for t in (OPENCODE_WEB if tools else ()))
+        note = ""
+    return (f"---\ndescription: TextFold's one answer\nmode: primary\n{rules}---\n{system}\n\n{note + ' ' if note else ''}"
+            "Reply with one JSON object that matches the JSON Schema given with the request, and nothing else.\n")
+
+
+def run_opencode(model, prompt, schema, system, effort, timeout, tools=False, cmd=None):
+    """opencode (`opencode run`) on the reader's own providers and opencode's free models: an agent of our own for the
+    call (_opencode_agent), written into the scratch directory it runs in; its events as JSON, the answer the last
+    message's text. The session it leaves is deleted after (_opencode_forget). effort: the model's nearest variant
+    (_opencode_variant). A call its free models refuse is asked again (OPENCODE_REFUSED_WAIT).
+    (cmd: the command that starts it, a custom agent's; else the one found here)"""
+    if cmd is None:
+        path = path_of("opencode")
+        if not path:
+            raise RuntimeError("opencode was not found on this computer")
+        cmd = argv(path)
+    agent = _opencode_agent(model, system, tools)
+    body = f"{prompt}\n\nReply with one JSON object that matches this JSON Schema, and nothing else:\n{json.dumps(schema)}"
+    variant = _opencode_variant(model, effort, cmd)
+    mcp_off = _opencode_mcp_off(cmd)
+    args = [*cmd, "run", "--format", "json", "--agent", "textfold", "-m", f"{model}#{variant}" if variant else model, "--archived"]
+    env = opencode_env()
+    unparsed = refused = 0
+    while True:
+        with scratch() as tmp:   # a scratch cwd: no project, nothing to read
+            folder = Path(tmp) / ".opencode" / "agent"
+            folder.mkdir(parents=True)
+            (folder / "textfold.md").write_text(agent, encoding="utf-8")
+            if mcp_off:   # (none of the reader's MCP servers started for this folder, and left running after)
+                (Path(tmp) / "opencode.json").write_text(json.dumps({"mcp": mcp_off}), encoding="utf-8")
+            # (opencode takes its project folder from PWD, not from the folder it is started in: without it, ours, where
+            # the agent is, would not be the one it looks in)
+            r = run(args, input=body, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=timeout, env={**env, "PWD": tmp}, cwd=tmp)
+        text, cost, session, error = _opencode_read(r.stdout)
+        if session:   # (archived, it is out of the lists; deleted, it is out of opencode's store too)
+            _opencode_forget(cmd, session, env)
+        if error is not None:
+            if _opencode_refused(error) and refused < len(OPENCODE_REFUSED_WAIT):
+                time.sleep(OPENCODE_REFUSED_WAIT[refused])
+                refused += 1
+                continue
+            raise _opencode_error(error)
+        if text is None:
+            raise RuntimeError(f"opencode run exited {r.returncode}: {(r.stderr or r.stdout)[-800:]}")
+        try:
+            return parse_json(text, schema), cost or None
+        except RuntimeError:
+            unparsed += 1   # a reply whose JSON does not parse is asked for once more (it is a sample: the next one parses)
+            if unparsed == 2:
+                raise

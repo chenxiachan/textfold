@@ -20,7 +20,7 @@ section after an atom added or taken out is translated again too.
 import time
 import urllib.error
 
-from . import biorxiv, corrections, epmc, github, ladder, links, llm, local, models, notes, store, translate, webpage, wiki
+from . import agents, biorxiv, corrections, epmc, github, ladder, links, llm, local, models, notes, store, translate, webpage, wiki
 from .fetch import fetch
 
 
@@ -50,7 +50,7 @@ def _shown(pid, doc, lang, base, model, shown):
     return sink
 
 
-def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=lambda *a: None, stop=None, shown=None):
+def generate(ref, lang, cfg, force=False, jobs=None, progress=lambda *a: None, log=lambda *a: None, stop=None, shown=None):
     def check():
         if stop is not None and stop.is_set():
             raise llm.Stopped()
@@ -85,8 +85,10 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
     lang = lang or base
     if cfg is None and (en is None or force or (lang != base and store.read(pid, f"tr-{lang}") is None)):
         # fetched and parsed, so it can be read as written; its levels need a model
-        raise RuntimeError("No model is available: install Claude Code, Codex, Pi, WorkBuddy or Antigravity, or add an API provider in the settings")
+        raise RuntimeError("No model is available: install Claude Code, Codex, Pi, WorkBuddy, Antigravity or opencode, or add an API provider in the settings")
     model = llm.label(cfg) if cfg else ""
+    if jobs is None:   # (calls at once: 4, or the agent's own, agents.JOBS)
+        jobs = agents.jobs_for(llm.spec_of(cfg)) if cfg else 4
     replaced = bool(doc["meta"].get("replaced"))   # its text replaced in place: a missing layer is made from the replies kept
     if en is None or (force and lang == base):
         check()
