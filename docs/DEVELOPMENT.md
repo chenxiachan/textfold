@@ -98,7 +98,10 @@ Models (⚙ Model & API), ported from ThoughtDAG's model access:
   no tool definitions ("Free usage limit reached", at once), so there the tools stay in the request on `ask`, which a
   non-interactive run rejects; the reader's other providers get none. The folder's `opencode.json` switches off the
   user's MCP servers (opencode's service starts them for every folder it is used in and keeps them running), and the
-  session is deleted after. A thinking level asks for the model's nearest variant (`-m provider/model#none`).
+  session is deleted after, beside the next calls. A thinking level asks for the model's nearest variant
+  (`-m provider/model#none`). The free models also refuse a call now and then when several go at once, with the same
+  "Free usage limit reached" (its `retryAfterMs`, some 15 h, is not when): such a call is asked again after 3 s and
+  8 s before it fails. A document's calls go 8 at once with opencode's models (`agents.JOBS`), 4 with the others.
 - **Two easy ways in** (`textfold/bridges.py`, as in ThoughtDAG):
   - **ChatGPT plan, local bridge**: openai-oauth (npm) serves the plan as an OpenAI-compatible endpoint on
     127.0.0.1:10531, signed in with Codex's login (or a browser sign-in). Running, it joins the providers on its own

@@ -765,6 +765,17 @@ def _opencode_models(path, cmd=None):
              "defaultEffort": None} for mid in ids]
 
 
+# calls made at once for a document, where an agent's differ from the 4 of the others: opencode's spend their time
+# waiting on its service (some 6 s before the first word), and its free models answered 12 at once
+JOBS = {"opencode": 8}
+
+
+def jobs_for(spec, default=4):
+    """How many calls a document's generation makes at once with this model spec (a custom agent: as the one it speaks as)."""
+    rt = (spec or {}).get("protocol") if (spec or {}).get("runtime") == "custom" else (spec or {}).get("runtime")
+    return JOBS.get(rt, default)
+
+
 CATALOG = {"claude-code": _claude_models, "codex": _codex_models, "pi": _pi_models, "codebuddy": _codebuddy_models, "agy": _agy_models,
            "opencode": _opencode_models}
 
@@ -1177,16 +1188,42 @@ def opencode_env(path=None):
 
 
 def _opencode_error(err):
-    """An error event's error, as the reader can act on it: opencode's free models out of their allowance (they come
-    back after the wait it gives), or what it said."""
+    """An error event's error, as the reader can act on it: opencode's free models refusing the call (asked again
+    first: _opencode_refused), or what it said."""
     err = err if isinstance(err, dict) else {"message": str(err)}
     kind, said = str(err.get("type") or ""), str(err.get("message") or err)[:600]
-    if kind == "provider.free-limit" or "Free usage limit" in said:
-        wait = err.get("retryAfterMs")
-        hours = f" for about {round(wait / 3.6e6, 1)} h" if isinstance(wait, (int, float)) and wait > 0 else ""
-        return RuntimeError(f"opencode's free models refused the call (usage limit reached{hours}): wait, connect a provider in "
-                            "opencode, or choose another model in Settings")
+    if _opencode_refused(err):
+        return RuntimeError(f"opencode's free models refused the call {1 + len(OPENCODE_REFUSED_WAIT)} times (their usage limit, "
+                            "or too many calls at once): try again later, connect a provider in opencode, or choose another model in Settings")
     return RuntimeError(f"opencode error{f' ({kind})' if kind else ''}: {said}")
+
+
+# "Free usage limit reached" also comes now and then for one call of several at once, and the next is answered: its
+# retryAfterMs (some 15 h) is not when. Such a call is asked again after these waits, in seconds, before it fails.
+OPENCODE_REFUSED_WAIT = (3, 8)
+
+
+def _opencode_refused(err):
+    return isinstance(err, dict) and (err.get("type") == "provider.free-limit" or "Free usage limit" in str(err.get("message") or ""))
+
+
+# a call's session deleted beside the next calls, not before its answer is handed back (some 0.4 s a call); one at a
+# time, in order
+_opencode_cleaner = None
+
+
+def _opencode_forget(cmd, session, env):
+    global _opencode_cleaner
+    def delete():
+        try:
+            _run([*cmd, "session", "delete", session], 20, env)
+        except Exception:
+            pass
+    with _opencode_lock:
+        if _opencode_cleaner is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _opencode_cleaner = ThreadPoolExecutor(1, thread_name_prefix="opencode-forget")
+    return _opencode_cleaner.submit(delete)
 
 
 def _opencode_read(stdout):
@@ -1237,7 +1274,8 @@ def _opencode_agent(model, system, tools=False):
 def run_opencode(model, prompt, schema, system, effort, timeout, tools=False, cmd=None):
     """opencode (`opencode run`) on the reader's own providers and opencode's free models: an agent of our own for the
     call (_opencode_agent), written into the scratch directory it runs in; its events as JSON, the answer the last
-    message's text. The session it leaves is deleted after. effort: the model's nearest variant (_opencode_variant).
+    message's text. The session it leaves is deleted after (_opencode_forget). effort: the model's nearest variant
+    (_opencode_variant). A call its free models refuse is asked again (OPENCODE_REFUSED_WAIT).
     (cmd: the command that starts it, a custom agent's; else the one found here)"""
     if cmd is None:
         path = path_of("opencode")
@@ -1250,7 +1288,8 @@ def run_opencode(model, prompt, schema, system, effort, timeout, tools=False, cm
     mcp_off = _opencode_mcp_off(cmd)
     args = [*cmd, "run", "--format", "json", "--agent", "textfold", "-m", f"{model}#{variant}" if variant else model, "--archived"]
     env = opencode_env()
-    for attempt in (1, 2):   # a reply whose JSON does not parse is asked for once more (it is a sample: the next one parses)
+    unparsed = refused = 0
+    while True:
         with scratch() as tmp:   # a scratch cwd: no project, nothing to read
             folder = Path(tmp) / ".opencode" / "agent"
             folder.mkdir(parents=True)
@@ -1263,16 +1302,18 @@ def run_opencode(model, prompt, schema, system, effort, timeout, tools=False, cm
                     timeout=timeout, env={**env, "PWD": tmp}, cwd=tmp)
         text, cost, session, error = _opencode_read(r.stdout)
         if session:   # (archived, it is out of the lists; deleted, it is out of opencode's store too)
-            try:
-                _run([*cmd, "session", "delete", session], 20, env)
-            except Exception:
-                pass
+            _opencode_forget(cmd, session, env)
         if error is not None:
+            if _opencode_refused(error) and refused < len(OPENCODE_REFUSED_WAIT):
+                time.sleep(OPENCODE_REFUSED_WAIT[refused])
+                refused += 1
+                continue
             raise _opencode_error(error)
         if text is None:
             raise RuntimeError(f"opencode run exited {r.returncode}: {(r.stderr or r.stdout)[-800:]}")
         try:
             return parse_json(text, schema), cost or None
         except RuntimeError:
-            if attempt == 2:
+            unparsed += 1   # a reply whose JSON does not parse is asked for once more (it is a sample: the next one parses)
+            if unparsed == 2:
                 raise

@@ -71,13 +71,13 @@ elif args[:2] == ["session", "delete"]:
 elif args[:1] == ["run"]:
     sid = "ses_1"
     say({"type": "step_start", "sessionID": sid, "part": {"type": "step-start", "messageID": "msg_1"}})
-    if mode == "free-limit":
-        say({"type": "error", "sessionID": sid, "error": {"type": "provider.free-limit", "status": 429,
-             "message": "Free usage limit reached.", "retryAfterMs": 7200000}})
-        sys.exit(1)
     count = os.path.join(os.path.dirname(log), "count")
     n = int(open(count).read()) + 1 if os.path.exists(count) else 1
     open(count, "w").write(str(n))
+    if mode == "free-limit" or (mode == "refuse-once" and n == 1):
+        say({"type": "error", "sessionID": sid, "error": {"type": "provider.free-limit", "status": 429,
+             "message": "Free usage limit reached.", "retryAfterMs": 7200000}})
+        sys.exit(1)
     if mode == "bad-json" and n == 1:
         reply = "I think the takeaway is folded."
     else:
@@ -114,6 +114,9 @@ class Opencode(unittest.TestCase):
                   mock.patch.dict(os.environ, {"FAKE_OC_LOG": str(self.log)})):
             p.start()
             self.addCleanup(p.stop)
+        p = mock.patch.object(agents, "OPENCODE_REFUSED_WAIT", (0, 0))
+        p.start()
+        self.addCleanup(p.stop)
         for k in ("FAKE_OC_MODE", "FAKE_OC_API", "FAKE_OC_MCP", "TEXTFOLD_NO_MODELS"):
             os.environ.pop(k, None)
         agents.OPENCODE_VARIANTS.clear()   # (what the server listed, kept between calls: asked afresh in each test)
@@ -122,6 +125,8 @@ class Opencode(unittest.TestCase):
         agents._opencode_mcp_asked.clear()
 
     def calls(self):
+        if agents._opencode_cleaner is not None:   # (sessions are deleted beside the calls: those asked for, done)
+            agents._opencode_cleaner.submit(lambda: None).result()
         return [json.loads(x) for x in self.log.read_text(encoding="utf-8").splitlines()] if self.log.exists() else []
 
     def test_models_listed_and_scanned(self):
@@ -217,10 +222,25 @@ class Opencode(unittest.TestCase):
         # (the allows after the ask: opencode's rules go by the last that matches)
         self.assertIn('permission:\n  "*": ask\n  webfetch: allow\n  websearch: allow\n---', md)
 
-    def test_free_limit_said_plainly(self):
+    def test_refused_asked_again_then_said_plainly(self):
         os.environ["FAKE_OC_MODE"] = "free-limit"
-        with self.assertRaisesRegex(RuntimeError, r"free models refused the call \(usage limit reached for about 2\.0 h\)"):
+        with self.assertRaisesRegex(RuntimeError, r"free models refused the call 3 times \(their usage limit, or too many calls at once\)"):
             agents.run_opencode("opencode/big-pickle", "Fold.", SCHEMA, "Sys", None, 30)
+        calls = self.calls()
+        self.assertEqual(sum(c["args"][:1] == ["run"] for c in calls), 3)
+        self.assertEqual(sum(c["args"][:2] == ["session", "delete"] for c in calls), 3)   # (each try's session)
+
+    def test_refused_once_then_answered(self):
+        os.environ["FAKE_OC_MODE"] = "refuse-once"
+        out, _ = agents.run_opencode("opencode/big-pickle", "Fold.", SCHEMA, "Sys", None, 30)
+        self.assertEqual(out, {"takeaway": "Folded"})
+        self.assertEqual(sum(c["args"][:1] == ["run"] for c in self.calls()), 2)
+
+    def test_jobs_per_agent(self):
+        self.assertEqual(agents.jobs_for({"kind": "agent", "runtime": "opencode"}), 8)
+        self.assertEqual(agents.jobs_for({"kind": "agent", "runtime": "custom", "protocol": "opencode"}), 8)
+        self.assertEqual(agents.jobs_for({"kind": "agent", "runtime": "claude-code"}), 4)
+        self.assertEqual(agents.jobs_for({"kind": "api", "protocol": "openai"}), 4)
 
     def test_unparsable_reply_asked_again(self):
         os.environ["FAKE_OC_MODE"] = "bad-json"
