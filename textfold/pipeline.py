@@ -85,7 +85,7 @@ def generate(ref, lang, cfg, force=False, jobs=4, progress=lambda *a: None, log=
     lang = lang or base
     if cfg is None and (en is None or force or (lang != base and store.read(pid, f"tr-{lang}") is None)):
         # fetched and parsed, so it can be read as written; its levels need a model
-        raise RuntimeError("No model is available: install Claude Code, Codex, Pi, WorkBuddy or Antigravity, or add an API provider in the settings")
+        raise RuntimeError("No model is available: install Claude Code, Codex, Pi, WorkBuddy, Antigravity or opencode, or add an API provider in the settings")
     model = llm.label(cfg) if cfg else ""
     replaced = bool(doc["meta"].get("replaced"))   # its text replaced in place: a missing layer is made from the replies kept
     if en is None or (force and lang == base):

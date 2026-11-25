@@ -76,8 +76,9 @@ takes the gallery from there. The repository's own Pages keeps its old address, 
 Models (⚙ Model & API), ported from ThoughtDAG's model access:
 
 - **Agents on this computer**, found at startup (and on Rescan) on PATH, the login shell's PATH, the usual install
-  directories and the node version managers. Claude Code, Codex, Pi, CodeBuddy and Antigravity run generations, each listing its own models
-  (Pi brings whatever providers it is configured with; CodeBuddy, WorkBuddy's copy of it first, the account's; Antigravity, `agy models`); Gemini CLI, Qwen Code, opencode, Cursor Agent, Kimi CLI, Amp,
+  directories and the node version managers. Claude Code, Codex, Pi, CodeBuddy, Antigravity and opencode run generations, each listing its own models
+  (Pi brings whatever providers it is configured with; CodeBuddy, WorkBuddy's copy of it first, the account's; Antigravity, `agy models`;
+  opencode, its server's list with each model's variants); Gemini CLI, Qwen Code, Cursor Agent, Kimi CLI, Amp,
   Goose, Crush, Droid, Copilot CLI, iFlow and Aider are reported when present. Claude Code is called without the
   user's settings and CLAUDE.md (`--setting-sources project,local` in a scratch folder; again with them if that fails
   to sign in). CodeBuddy is called the same way, but with its user settings (without them it has no sign-in and
@@ -91,6 +92,13 @@ Models (⚙ Model & API), ported from ThoughtDAG's model access:
   TextFold's own, written into the scratch folder for the call (our system prompt, the `finish` tool alone, no MCP
   servers, rules or skills of the user's), with `--output-format stream-json`: the answer is the `finish` call's or the
   result's, and the call ends once it is in, since agy goes on with work of its own after it (`agents.run`'s `done`).
+  opencode (`opencode run --format json`) runs an agent of TextFold's own too (`.opencode/agent/textfold.md` in the
+  scratch folder: our system prompt, no tool that reads, writes or runs anything), with `PWD` set to that folder, since
+  opencode finds its project by `PWD`. Its own provider (`opencode/…`, the free models) refuses a request that carries
+  no tool definitions ("Free usage limit reached", at once), so there the tools stay in the request on `ask`, which a
+  non-interactive run rejects; the reader's other providers get none. The folder's `opencode.json` switches off the
+  user's MCP servers (opencode's service starts them for every folder it is used in and keeps them running), and the
+  session is deleted after. A thinking level asks for the model's nearest variant (`-m provider/model#none`).
 - **Two easy ways in** (`textfold/bridges.py`, as in ThoughtDAG):
   - **ChatGPT plan, local bridge**: openai-oauth (npm) serves the plan as an OpenAI-compatible endpoint on
     127.0.0.1:10531, signed in with Codex's login (or a browser sign-in). Running, it joins the providers on its own
@@ -187,7 +195,8 @@ text is opened, shown only where questions go to an agent: `app.js` askAgent; `/
 Then the agent looks it up on the web with its own tools, and nothing else (`agents.py`): Claude Code with
 `--tools WebSearch,WebFetch`, allowed without asking and no MCP server; CodeBuddy the same, with its StructuredOutput;
 Codex with `--search` in its read-only sandbox; Pi with `--no-builtin-tools`, its extensions' tools alone; Antigravity
-with `search_web` and `read_url_content` beside `finish`, in its sandbox. None of them
+with `search_web` and `read_url_content` beside `finish`, in its sandbox; opencode with `webfetch` and `websearch`
+allowed, every other tool off or rejected. None of them
 changes a file (Claude Code, CodeBuddy and Pi read none and run no command either; Codex may read, in its sandbox); each
 keeps its own system prompt, ours appended. The prompt adds that what
 comes from outside the paper ends with [[?]], each page drawn on given as a Markdown link (the reader draws links in
